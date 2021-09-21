@@ -1,7 +1,9 @@
 import numpy as np
 import tensorflow as tf
+# Augmentation Policy
 import imgaug.augmenters as iaa
-from augmentation_policy import augment_image_pretraining, augment_image_finetuning
+from Data_augmentation_policy.Simclr_augment import custom_augment
+from Data_augmentation_policy.RandAugment import tfa_randaug, imgaug_randaug
 from official.vision.image_classification.augment import RandAugment
 
 SEED = 26
@@ -12,48 +14,133 @@ SEED = 26
 SEED_1 = 42
 
 
-class CIFAR100_normal():
+class CIFAR100_dataset():
 
-    def __init__(self, BATCH_SIZE, IMG_SIZE):
+    def __init__(self, GLOBAL_BATCH_SIZE, IMG_SIZE):
         (self.x_train, self.y_train), (self.x_test,
                                        self.y_test) = tf.keras.datasets.cifar100.load_data()
         self.num_train_images, self.num_test_images = self.y_train.shape[0], self.y_test.shape[0]
-
         # Normalize training and testing images
-        self.x_train = tf.cast(self.x_train / 255., tf.float32)
+        self.x_train = tf.cast(self.x_train, tf.float32)
         self.x_test = tf.cast(self.x_test / 255., tf.float32)
-
         self.y_train = tf.cast(tf.squeeze(self.y_train), tf.float32)
         self.y_test = tf.cast(tf.squeeze(self.y_test), tf.float32)
         self.IMG_SIZE = IMG_SIZE
-        self.BATCH_SIZE = BATCH_SIZE
+        self.BATCH_SIZE = GLOBAL_BATCH_SIZE
         self.y_train = tf.keras.utils.to_categorical(
             self.y_train, num_classes=100)
         # print(self.y_train[1:10])
-
         self.y_test = tf.keras.utils.to_categorical(
             self.y_test, num_classes=100)
 
-    def data_train(self):
+        self.test_ds = (tf.data.Dataset.from_tensor_slices((self.x_test, self.y_test))
+                        .shuffle(self.BATCH_SIZE * 100)
+                        .map(lambda x, y, : (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE)), y), num_parallel_calls=AUTO)
+                        .batch(self.BATCH_SIZE)
+                        .prefetch(AUTO)
+                        )
 
-        train_ds = (tf.data.Dataset.from_tensor_slices((self.x_train, self.y_train))
+    def supervised_train_ds_test_ds(self):
+        x_train = self.x_train / 255.
+        train_ds = (tf.data.Dataset.from_tensor_slices((x_train, self.y_train))
                     .shuffle(self.BATCH_SIZE * 100)
                     .map(lambda x, y, : (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE)), y), num_parallel_calls=AUTO)
                     .batch(self.BATCH_SIZE)
                     .prefetch(AUTO)
                     )
 
-        test_ds = (tf.data.Dataset.from_tensor_slices((self.x_test, self.y_test))
-                   .shuffle(self.BATCH_SIZE * 100)
-                   .map(lambda x, y, : (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE)), y), num_parallel_calls=AUTO)
-                   .batch(self.BATCH_SIZE)
-                   .prefetch(AUTO)
-                   )
-        return train_ds, test_ds
+        return train_ds, self.test_ds
+
+    def ssl_Simclr_Augment_policy(self):
+        x_train = self.x_train / 255.
+
+        train_ds_one = (tf.data.Dataset.from_tensor_slices(x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .map(lambda x: (custom_augment(x, self.IMG_SIZE)), num_parallel_calls=AUTO)
+                        .batch(self.BATCH_SIZE)
+                        .prefetch(AUTO)
+                        )
+
+        train_ds_two = (tf.data.Dataset.from_tensor_slices(x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .map(lambda x: (custom_augment(x, self.IMG_SIZE)), num_parallel_calls=AUTO)
+                        .batch(self.BATCH_SIZE)
+                        .prefetch(AUTO)
+                        )
+
+        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+        return train_ds
+
+    def ssl_Randaug_Augment_TFA_policy(self, num_transform, magnitude):
+
+        train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                        .batch(self.BATCH_SIZE)
+                        .prefetch(AUTO)
+                        )
+
+        train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                        .batch(self.BATCH_SIZE)
+                        .prefetch(AUTO)
+                        )
+
+        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+
+        return train_ds
+
+    def ssl_Randaug_Augment_IMGAUG_policy(self, num_transform, magnitude):
+    
+        train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .batch(self.BATCH_SIZE)
+                        .map(lambda x: (imgaug_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                        
+                        .prefetch(AUTO)
+                        )
+
+        train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                             num_parallel_calls=AUTO,
+                             )
+                        .batch(self.BATCH_SIZE)
+                        .map(lambda x: (imgaug_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                        
+                        .prefetch(AUTO)
+                        )
+
+        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+
+        return train_ds
 
 
-class CIFAR100:
-    def __init__(self):
+# sample Beta Distribution
+
+
+class Dataset_mixture():
+
+    def __init__(self, IMG_SIZE, BATCH_SIZE):
+        self.IMG_SIZE = IMG_SIZE
+        self.BATCH_SIZE = BATCH_SIZE
+
         (self.x_train, self.y_train), (self.x_test,
                                        self.y_test) = tf.keras.datasets.cifar100.load_data()
         self.num_train_images, self.num_test_images = self.y_train.shape[0], self.y_test.shape[0]
@@ -150,16 +237,6 @@ class CIFAR100:
         lambda_value = 1 - (target_w * target_h) / (IMG_SIZE * IMG_SIZE)
         lambda_value = tf.cast(lambda_value, tf.float32)
         return image,
-
-    def get_batch_pretraining(self, batch_id, batch_size):
-        augmented_images_1, augmented_images_2 = [], []
-        for image_id in range(batch_id*batch_size, (batch_id+1)*batch_size):
-            image = self.x_train[image_id]
-            augmented_images_1.append(augment_image_pretraining(image))
-            augmented_images_2.append(augment_image_pretraining(image))
-        x_batch_1 = tf.stack(augmented_images_1)
-        x_batch_2 = tf.stack(augmented_images_2)
-        return x_batch_1, x_batch_2  # (bs, 32, 32, 3), (bs, 32, 32, 3)
 
     def cifar_100_distribute_train_ds_SimCLR_mixup(self, GLOBAL_BATCH_SIZE, alpha_mixup, mode="one_image"):
 
@@ -476,25 +553,11 @@ class CIFAR100:
 
         return train_ds
 
-    def get_batch_finetuning(self, batch_id, batch_size):
-        augmented_images = []
-        for image_id in range(batch_id*batch_size, (batch_id+1)*batch_size):
-            image = self.x_train[image_id]
-            augmented_images.append(augment_image_finetuning(image))
-        x_batch = tf.stack(augmented_images)
-        y_batch = tf.slice(self.y_train, [batch_id*batch_size], [batch_size])
-        return x_batch, y_batch  # (bs, 32, 32, 3), (bs)
-
     def get_batch_testing(self, batch_id, batch_size):
         x_batch = tf.slice(
             self.x_test, [batch_id*batch_size, 0, 0, 0], [batch_size, -1, -1, -1])
         y_batch = tf.slice(self.y_test, [batch_id*batch_size], [batch_size])
         return x_batch, y_batch  # (bs, 32, 32, 3), (bs)
-
-    def shuffle_training_data(self):
-        random_ids = tf.random.shuffle(tf.range(self.num_train_images))
-        self.x_train = tf.gather(self.x_train, random_ids)
-        self.y_train = tf.gather(self.y_train, random_ids)
 
 
 class self_distillation_dataset():

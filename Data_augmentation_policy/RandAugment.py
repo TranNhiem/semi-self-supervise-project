@@ -15,7 +15,7 @@ import numpy as np
 augmenter = RandAugment(num_layers=2, magnitude=7)
 
 
-def tfa_randaug(image):
+def tfa_randaug(image, num_transform, magnitude):
     '''
     Args:
      image: A tensor [ with, height, channels]
@@ -23,8 +23,11 @@ def tfa_randaug(image):
     Return: 
       Image: A tensor of Applied transformation [with, height, channels]
     '''
-    image = augmenter.distort(image)
-    image = tf.cast(image, dtype=tf.float32) / 255.
+    '''Version 1 RandAug Augmentation'''
+    augmenter_apply = RandAugment(
+        num_layers=num_transform, magnitude=magnitude)
+    image = augmenter_apply.distort(image)
+    image = tf.cast(image, dtype=tf.float32)
 
     return image
 
@@ -33,7 +36,7 @@ def tfa_randaug(image):
 rand_aug = iaa.RandAugment(n=2, m=7)
 
 
-def imgaug_randaug(images):
+def imgaug_randaug(images, num_transform, magnitude):
     '''
     Args:
      images: A batch tensor [batch, with, height, channels]
@@ -41,11 +44,12 @@ def imgaug_randaug(images):
     Return: 
       Images: A batch of Applied transformation [batch, with, height, channels]
     '''
+    rand_aug_apply = iaa.RandAugment(n=num_transform, m=magnitude)
 
     # Input to `augment()` is a TensorFlow tensor which
     # is not supported by `imgaug`. This is why we first
     # convert it to its `numpy` variant.
     images = tf.cast(images, tf.uint8)
-    images = rand_aug(images=images.numpy())
+    images = rand_aug_apply(images=images.numpy())
     #images = (images.astype(np.float32))/255.
     return images

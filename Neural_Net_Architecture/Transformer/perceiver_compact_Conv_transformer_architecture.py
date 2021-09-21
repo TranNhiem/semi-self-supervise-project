@@ -70,7 +70,6 @@ def create_ffn(units_neuron, dropout_rate):
 
 # Patches Extract
 
-
 class patches(tf.keras.layers.Layer):
     '''
     args: Patch_size the size of crop you expect to Unroll image into sequences
@@ -115,8 +114,6 @@ class patches(tf.keras.layers.Layer):
 # Encoding Patches [Content and Position]
 # 1 LINEAR position encoding tf.keras.layers.Embeddeding
 # This position encoding is not learnable
-
-
 class patch_content_position_encoding(tf.keras.layers.Layer):
     '''
     args: 

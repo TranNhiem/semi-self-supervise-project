@@ -1,7 +1,6 @@
 import tensorflow as tf
 #from position_encoding_type import FourierPositionEncoding
-import tensorflow as tf
-import torch
+
 ####################################################################################
 '''DEFINE Hyperparameter Unroll the Image'''
 ####################################################################################
@@ -199,7 +198,6 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     return model
 
 # 2 Cross Attention Module
-
 
 def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dropout):
     '''

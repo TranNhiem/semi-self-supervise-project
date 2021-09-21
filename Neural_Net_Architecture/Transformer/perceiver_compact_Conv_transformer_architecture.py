@@ -140,7 +140,6 @@ class patch_content_position_encoding(tf.keras.layers.Layer):
             positions), name="Encoding_patches")
         return encoding
 
-
 ####################################################################################
 '''-----Building Transformer Module----'''
 # 1. Convention attention module for encoder --- Decoder

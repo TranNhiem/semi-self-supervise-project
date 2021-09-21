@@ -12,21 +12,144 @@ SEED = 26
 SEED_1 = 42
 
 
-class CIFAR100:
+class CIFAR100_normal():
 
-    def __init__(self):
+    def __init__(self, BATCH_SIZE, IMG_SIZE):
         (self.x_train, self.y_train), (self.x_test,
                                        self.y_test) = tf.keras.datasets.cifar100.load_data()
         self.num_train_images, self.num_test_images = self.y_train.shape[0], self.y_test.shape[0]
-        self.class_names = ['airplane', 'automobile', 'bird',
-                            'cat', 'deer', 'dog', 'frog', 'horse', 'sheep', 'truck']
 
         # Normalize training and testing images
         self.x_train = tf.cast(self.x_train / 255., tf.float32)
         self.x_test = tf.cast(self.x_test / 255., tf.float32)
 
+        self.y_train = tf.cast(tf.squeeze(self.y_train), tf.float32)
+        self.y_test = tf.cast(tf.squeeze(self.y_test), tf.float32)
+        self.IMG_SIZE = IMG_SIZE
+        self.BATCH_SIZE = BATCH_SIZE
+        self.y_train = tf.keras.utils.to_categorical(
+            self.y_train, num_classes=100)
+        # print(self.y_train[1:10])
+
+        self.y_test = tf.keras.utils.to_categorical(
+            self.y_test, num_classes=100)
+
+    def data_train(self):
+
+        train_ds = (tf.data.Dataset.from_tensor_slices((self.x_train, self.y_train))
+                    .shuffle(self.BATCH_SIZE * 100)
+                    .map(lambda x, y, : (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE)), y), num_parallel_calls=AUTO)
+                    .batch(self.BATCH_SIZE)
+                    .prefetch(AUTO)
+                    )
+
+        test_ds = (tf.data.Dataset.from_tensor_slices((self.x_test, self.y_test))
+                   .shuffle(self.BATCH_SIZE * 100)
+                   .map(lambda x, y, : (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE)), y), num_parallel_calls=AUTO)
+                   .batch(self.BATCH_SIZE)
+                   .prefetch(AUTO)
+                   )
+        return train_ds, test_ds
+
+
+class CIFAR100:
+    def __init__(self):
+        (self.x_train, self.y_train), (self.x_test,
+                                       self.y_test) = tf.keras.datasets.cifar100.load_data()
+        self.num_train_images, self.num_test_images = self.y_train.shape[0], self.y_test.shape[0]
+
+        # Normalize training and testing images
+        self.x_train = tf.cast(self.x_train/255., tf.float32)  # /255.
+        self.x_test = tf.cast(self.x_test / 255., tf.float32)
+
         self.y_train = tf.cast(tf.squeeze(self.y_train), tf.int32)
         self.y_test = tf.cast(tf.squeeze(self.y_test), tf.int32)
+
+    @classmethod
+    def sample_beta_distribution_cutmix(self, size, concentration_0=0.4, concentration_1=0.4):
+        gamma_1_sample = tf.random.gamma(shape=[size], alpha=concentration_1)
+        gamma_2_sample = tf.random.gamma(shape=[size], alpha=concentration_0)
+        return gamma_1_sample / (gamma_1_sample + gamma_2_sample)
+
+    @classmethod
+    @tf.function
+    def get_box(self, IMG_SIZE, lambda_value):
+        cut_rat = tf.math.sqrt(1.0 - lambda_value)
+
+        cut_w = int(IMG_SIZE) * cut_rat  # rws
+        cut_w = tf.cast(cut_w, tf.int32)
+
+        cut_h = int(IMG_SIZE) * cut_rat  # rh
+        cut_h = tf.cast(cut_h, tf.int32)
+
+        cut_x = tf.random.uniform(
+            (1,), minval=0, maxval=IMG_SIZE, dtype=tf.int32)  # rx
+        cut_y = tf.random.uniform(
+            (1,), minval=0, maxval=IMG_SIZE, dtype=tf.int32)  # ry
+
+        boundaryx1 = tf.clip_by_value(cut_x[0] - cut_w // 2, 0, IMG_SIZE)
+        boundaryy1 = tf.clip_by_value(cut_y[0] - cut_h // 2, 0, IMG_SIZE)
+        bbx2 = tf.clip_by_value(cut_x[0] + cut_w // 2, 0, IMG_SIZE)
+        bby2 = tf.clip_by_value(cut_y[0] + cut_h // 2, 0, IMG_SIZE)
+
+        target_h = bby2 - boundaryy1
+        if target_h == 0:
+            target_h += 1
+
+        target_w = bbx2 - boundaryx1
+        if target_w == 0:
+            target_w += 1
+
+        #print(f'Size of BBox, and Target_size checking{boundaryx1, boundaryy1,target_h, target_w }')
+
+        return boundaryx1, boundaryy1, target_h, target_w
+
+    @classmethod
+    @tf.function
+    def cutmix_x_only(self, train_ds_one, train_ds_two, IMG_SIZE, alpha_cutmix):
+        image1, image2 = train_ds_one, train_ds_two
+
+        # alpha_cutmix = [0.3]
+        # alpha_cutmix = [0.3]
+
+        # Get a sample from the Beta distribution
+        lambda_value = self.sample_beta_distribution_cutmix(
+            1, alpha_cutmix, alpha_cutmix)
+
+        # Define Lambda
+        lambda_value = lambda_value[0][0]
+
+        # Get the bounding box offsets, heights and widths
+        boundaryx1, boundaryy1, target_h, target_w = self.get_box(
+            IMG_SIZE, lambda_value)
+
+        # Get a patch from the second image (`image2`)
+        crop2 = tf.image.crop_to_bounding_box(
+            image2, boundaryy1, boundaryx1, target_h, target_w
+        )
+        # Pad the `image2` patch (`crop2`) with the same offset
+        image2 = tf.image.pad_to_bounding_box(
+            crop2, boundaryy1, boundaryx1, IMG_SIZE, IMG_SIZE
+        )
+        # Get a patch from the first image (`image1`)
+        crop1 = tf.image.crop_to_bounding_box(
+            image1, boundaryy1, boundaryx1, target_h, target_w
+        )
+        # Pad the `image1` patch (`crop1`) with the same offset
+        img1 = tf.image.pad_to_bounding_box(
+            crop1, boundaryy1, boundaryx1, IMG_SIZE, IMG_SIZE
+        )
+
+        # Modify the first image by subtracting the patch from `image1`
+        # (before applying the `image2` patch)
+        image1 = image1 - img1
+        # Add the modified `image1` and `image2`  together to get the CutMix image
+        image = image1 + image2
+
+        # Adjust Lambda in accordance to the pixel ration
+        lambda_value = 1 - (target_w * target_h) / (IMG_SIZE * IMG_SIZE)
+        lambda_value = tf.cast(lambda_value, tf.float32)
+        return image,
 
     def get_batch_pretraining(self, batch_id, batch_size):
         augmented_images_1, augmented_images_2 = [], []
@@ -36,158 +159,320 @@ class CIFAR100:
             augmented_images_2.append(augment_image_pretraining(image))
         x_batch_1 = tf.stack(augmented_images_1)
         x_batch_2 = tf.stack(augmented_images_2)
-
         return x_batch_1, x_batch_2  # (bs, 32, 32, 3), (bs, 32, 32, 3)
 
-    def simclr_dataset(self, batch_id, GLOBAL_BATCH_SIZE):
+    def cifar_100_distribute_train_ds_SimCLR_mixup(self, GLOBAL_BATCH_SIZE, alpha_mixup, mode="one_image"):
 
-        augmented_images = []
-        for image_id in range(batch_id*GLOBAL_BATCH_SIZE, (batch_id+1)*GLOBAL_BATCH_SIZE):
-            image = self.x_train[image_id]
-            augmented_images.append(augment_image_pretraining(image))
-            augmented_images.append(augment_image_pretraining(image))
-        x_batch = tf.stack(augmented_images)
+        if mode == "one_image":
 
-        return x_batch  # (2*bs, 32, 32, 3)
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
 
-    def simclr_dataset_modify(self,  GLOBAL_BATCH_SIZE):
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
 
-        augmented_images = []
-        # for image_id in range(batch_id*BATCH_SIZE, (batch_id+1)*BATCH_SIZE):
-        for image_id in range(50000):
-            image = self.x_train[image_id]
-            augmented_images.append(augment_image_pretraining(image))
-            augmented_images.append(augment_image_pretraining(image))
-        #x_batch = tf.stack(augmented_images)
-        x_batch = np.array(augmented_images)
-        print(x_batch.shape)
+                            .shuffle(1024, seed=SEED)
 
-        train_ds = (tf.data.Dataset.from_tensor_slices(x_batch)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
 
+                            .prefetch(AUTO)
+                            )
 
-                    # .map(lambda x: (tf.image.resize(x, (RESIZ_IMG, RESIZ_IMG))),
-                    #      num_parallel_calls=AUTO,)
-                    # .map(processing_resize_image,num_parallel_calls=AUTO,)
-                    # .batch(GLOBAL_BATCH_SIZE)
-                    # .prefetch(AUTO)
-                    )
-        #train_ds = tf.data.Dataset(train_ds)
-        return train_ds  # (2*bs, 32, 32, 3)
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+            train_ds_mu = train_ds.map(
+                lambda ds_one, ds_two: mix_up(ds_one, ds_two, alpha=alpha_mixup), num_parallel_calls=AUTO
+            )
+
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_mu))
+
+        if mode == "two_image_no_augment":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED_1)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+
+                            .shuffle(1024, seed=SEED)
+
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+            train_ds_mu = train_ds.map(
+                lambda ds_one, ds_two: mix_up(ds_one, ds_two, alpha=alpha_mixup), num_parallel_calls=AUTO
+            )
+
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_mu))
+
+        if mode == "two_image_with_augment":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED_1)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+
+                            .shuffle(1024, seed=SEED)
+
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+            train_ds_one_mix = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                                .shuffle(1024, seed=SEED_1)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                num_parallel_calls=AUTO,)
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .batch(GLOBAL_BATCH_SIZE)
+                                .prefetch(AUTO)
+                                )
+
+            train_ds_two_mix = (tf.data.Dataset.from_tensor_slices(self.x_train)
+
+                                .shuffle(1024, seed=SEED)
+
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                     num_parallel_calls=AUTO,
+                                     )
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .batch(GLOBAL_BATCH_SIZE)
+
+                                .prefetch(AUTO)
+                                )
+
+            train_ds_mix = tf.data.Dataset.zip(
+                (train_ds_one_mix, train_ds_two_mix))
+
+            train_ds_mu = train_ds_mix.map(
+                lambda ds_one, ds_two: mix_up(ds_one, ds_two, alpha=alpha_mixup), num_parallel_calls=AUTO
+            )
+
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_mu))
+
+        return train_all_ds
+
+    def cifar_100_distribute_train_ds_SimCLR_Cutmix(self,  GLOBAL_BATCH_SIZE, alpha_cutmix, mode="one_image"):
+
+        if mode == "one_image":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_one_mix = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                                .shuffle(1024, seed=SEED)
+                                # .batch(BATCH_SIZE)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                     num_parallel_calls=AUTO,)
+                                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+
+            train_ds_two_mix = (tf.data.Dataset.from_tensor_slices(self.x_train,)
+                                .shuffle(1024, seed=SEED)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                num_parallel_calls=AUTO,)
+                                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+            # Combine two shuffled datasets from the same training data.
+            train_ds_mix = tf.data.Dataset.zip(
+                (train_ds_one_mix, train_ds_two_mix))
+
+            train_ds_cmu = (
+                train_ds_mix.map(lambda ds_one, ds_two: self.cutmix_x_only(
+                    ds_one, ds_two, IMG_SIZE, alpha_cutmix), num_parallel_calls=AUTO)
+                .batch(GLOBAL_BATCH_SIZE)
+                .prefetch(AUTO)
+            )
+
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_cmu))
+
+        if mode == "two_image_no_augment":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED_1)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                              .shuffle(1024, seed=SEED)
+                              .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                   num_parallel_calls=AUTO,
+                                   )
+                            # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_one_mix = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                                .shuffle(1024, seed=SEED_1)
+                                # .batch(BATCH_SIZE)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                     num_parallel_calls=AUTO,)
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+
+            train_ds_two_mix = (tf.data.Dataset.from_tensor_slices(self.x_train,)
+                                .shuffle(1024, seed=SEED)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                num_parallel_calls=AUTO,)
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+            # Combine two shuffled datasets from the same training data.
+            train_ds_mix = tf.data.Dataset.zip(
+                (train_ds_one_mix, train_ds_two_mix))
+
+            train_ds_cmu = (
+                train_ds_mix.map(lambda ds_one, ds_two: self.cutmix_x_only(
+                    ds_one, ds_two, IMG_SIZE, alpha_cutmix), num_parallel_calls=AUTO)
+                .batch(GLOBAL_BATCH_SIZE)
+                .prefetch(AUTO)
+            )
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_cmu))
+
+        if mode == "two_image_with_augment":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(1024, seed=SEED_1)
+                            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                 num_parallel_calls=AUTO,)
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                              .shuffle(1024, seed=SEED)
+                              .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                   num_parallel_calls=AUTO,
+                                   )
+                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+                            .batch(GLOBAL_BATCH_SIZE)
+
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_one_mix = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                                .shuffle(1024, seed=SEED_1)
+                                # .batch(BATCH_SIZE)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                     num_parallel_calls=AUTO,)
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+
+            train_ds_two_mix = (tf.data.Dataset.from_tensor_slices(self.x_train,)
+                                .shuffle(1024, seed=SEED)
+                                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                                num_parallel_calls=AUTO,)
+                                # .map(augment_image_pretraining,num_parallel_calls=AUTO,)
+                                .prefetch(AUTO)
+                                )
+            # Combine two shuffled datasets from the same training data.
+            train_ds_mix = tf.data.Dataset.zip(
+                (train_ds_one_mix, train_ds_two_mix))
+
+            train_ds_cmu = (
+                train_ds_mix.map(lambda ds_one, ds_two: self.cutmix_x_only(
+                    ds_one, ds_two, IMG_SIZE, alpha_cutmix), num_parallel_calls=AUTO)
+                .batch(GLOBAL_BATCH_SIZE)
+                .prefetch(AUTO)
+            )
+            train_all_ds = tf.data.Dataset.zip(
+                (train_ds_one, train_ds_two, train_ds_cmu))
+
+        return train_all_ds
 
     def cifar_100_distribute_train_ds(self, BATCH_SIZE,  GLOBAL_BATCH_SIZE, resize=False, ):
 
-        if resize:
+        train_ds_one = tf.data.Dataset.from_tensor_slices(self.x_train)
+        train_ds_one = (
+            train_ds_one.shuffle(1024, seed=SEED)
+            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                 num_parallel_calls=AUTO,)
+            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+            .batch(GLOBAL_BATCH_SIZE)
+            .prefetch(AUTO)
+        )
 
-            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+        train_ds_two = tf.data.Dataset.from_tensor_slices(self.x_train)
+        train_ds_two = (
+            train_ds_two.shuffle(1024, seed=SEED)
 
-                            .shuffle(1024, seed=SEED)
-                            .map(lambda x: (tf.image.resize(x, (RESIZ_IMG, RESIZ_IMG))),
-                                 num_parallel_calls=AUTO,)
-                            # .map(processing_resize_image,num_parallel_calls=AUTO,)
-                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                            .batch(GLOBAL_BATCH_SIZE)
-                            .prefetch(AUTO)
-                            )
+            .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
+                 num_parallel_calls=AUTO,
+                 )
+            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
+            .batch(GLOBAL_BATCH_SIZE)
 
-            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+            .prefetch(AUTO)
+        )
 
-                            .shuffle(1024, seed=SEED)
-
-                            .map(lambda x: (tf.image.resize(x, (RESIZ_IMG, RESIZ_IMG))),
-                            num_parallel_calls=AUTO,
-                                 )
-                            # .map(processing_resize_image,num_parallel_calls=AUTO,)
-                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                            .batch(GLOBAL_BATCH_SIZE)
-
-                            .prefetch(AUTO)
-                            )
-
-            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
-
-        else:
-            train_ds_one = tf.data.Dataset.from_tensor_slices(self.x_train)
-            train_ds_one = (
-                train_ds_one.shuffle(1024, seed=SEED)
-                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
-                     num_parallel_calls=AUTO,)
-                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                .batch(GLOBAL_BATCH_SIZE)
-                .prefetch(AUTO)
-            )
-
-            train_ds_two = tf.data.Dataset.from_tensor_slices(self.x_train)
-            train_ds_two = (
-                train_ds_two.shuffle(1024, seed=SEED)
-
-                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
-                     num_parallel_calls=AUTO,
-                     )
-                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                .batch(GLOBAL_BATCH_SIZE)
-
-                .prefetch(AUTO)
-            )
-
-            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
-
-        return train_ds
-
-    # This still bug Under Development
-    def cifar_100_distribute_stack_train_ds(self, BATCH_SIZE,  GLOBAL_BATCH_SIZE, resize=False,):
-        if resize:
-
-            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
-
-                            .shuffle(1024, seed=SEED)
-                            .map(lambda x: (tf.image.resize(x, (RESIZ_IMG, RESIZ_IMG))),
-                                 num_parallel_calls=AUTO,)
-                            # .map(processing_resize_image,num_parallel_calls=AUTO,)
-                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                            .batch(GLOBAL_BATCH_SIZE)
-                            .prefetch(AUTO)
-                            )
-
-            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
-
-                            .shuffle(1024, seed=SEED)
-
-                            .map(lambda x: (tf.image.resize(x, (RESIZ_IMG, RESIZ_IMG))),
-                            num_parallel_calls=AUTO,
-                                 )
-                            # .map(processing_resize_image,num_parallel_calls=AUTO,)
-                            .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                            .batch(GLOBAL_BATCH_SIZE)
-                            .prefetch(AUTO)
-                            )
-
-            train_ds = np.stack((train_ds_one, train_ds_two), axis=0)  # axis=1
-
-        else:
-            train_ds_one = tf.data.Dataset.from_tensor_slices(self.x_train)
-            train_ds_one = (
-                train_ds_one.shuffle(1024, seed=SEED)
-                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
-                     num_parallel_calls=AUTO,)
-                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                .batch(GLOBAL_BATCH_SIZE)
-                .prefetch(AUTO)
-            )
-
-            train_ds_two = tf.data.Dataset.from_tensor_slices(self.x_train)
-            train_ds_two = (
-                train_ds_two.shuffle(1024, seed=SEED)
-
-                .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
-                     num_parallel_calls=AUTO,
-                     )
-                .map(augment_image_pretraining, num_parallel_calls=AUTO,)
-                .batch(GLOBAL_BATCH_SIZE)
-
-                .prefetch(AUTO)
-            )
-
-            train_ds = np.stack((train_ds_one, train_ds_two), axis=0)
+        train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
 
         return train_ds
 

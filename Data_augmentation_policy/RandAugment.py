@@ -12,7 +12,6 @@ import tensorflow as tf
 import numpy as np
 
 '''Version 1 RandAug Augmentation'''
-augmenter = RandAugment(num_layers=2, magnitude=7)
 
 
 def tfa_randaug(image, num_transform, magnitude):
@@ -33,7 +32,7 @@ def tfa_randaug(image, num_transform, magnitude):
 
 
 '''Version2  RandAug Augmentation'''
-rand_aug = iaa.RandAugment(n=2, m=7)
+# rand_aug = iaa.RandAugment(n=2, m=7)
 
 
 def imgaug_randaug(images, num_transform, magnitude):
@@ -52,4 +51,5 @@ def imgaug_randaug(images, num_transform, magnitude):
     images = tf.cast(images, tf.uint8)
     images = rand_aug_apply(images=images.numpy())
     #images = (images.astype(np.float32))/255.
+    images = tf.cast(images, tf.float32)/255.
     return images

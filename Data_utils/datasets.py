@@ -74,7 +74,7 @@ class CIFAR100_dataset():
                         .prefetch(AUTO)
                         )
 
-        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+        train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
         return train_ds
 
     def ssl_Randaug_Augment_TFA_policy(self, num_transform, magnitude):
@@ -99,41 +99,60 @@ class CIFAR100_dataset():
                         .prefetch(AUTO)
                         )
 
-        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+        train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
 
         return train_ds
 
     def ssl_Randaug_Augment_IMGAUG_policy(self, num_transform, magnitude):
-    
+
+        rand_aug_apply = iaa.RandAugment(n=num_transform, m=magnitude)
+
+        def imgaug_randaug(images):
+            '''
+            Args:
+            images: A batch tensor [batch, with, height, channels]
+            rand_aug: a function to apply Random transformation 
+            Return: 
+            Images: A batch of Applied transformation [batch, with, height, channels]
+            '''
+
+            # Input to `augment()` is a TensorFlow tensor which
+            # is not supported by `imgaug`. This is why we first
+            # convert it to its `numpy` variant.
+            images = tf.cast(images, tf.uint8)
+            images = rand_aug_apply(images=images.numpy())
+            #images = (images.astype(np.float32))/255.
+            images = tf.cast(images, tf.float32)/255.
+            return images
+
         train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
                         .shuffle(self.BATCH_SIZE * 100, seed=SEED)
-                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                        .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
                              num_parallel_calls=AUTO,
                              )
                         .batch(self.BATCH_SIZE)
-                        .map(lambda x: (imgaug_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
-                        
+                        # .map(lambda x: (imgaug_randaug(x, num_transform=num_transform, magnitude=magnitude)), num_parallel_calls=AUTO)
+                        .map(lambda x: (tf.py_function(imgaug_randaug,  [x], [tf.float32])[0]), num_parallel_calls=AUTO)
                         .prefetch(AUTO)
                         )
 
         train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
                         .shuffle(self.BATCH_SIZE * 100, seed=SEED)
-                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                        .map(lambda x: (tf.image.resize(x, (IMG_SIZE, IMG_SIZE))),
                              num_parallel_calls=AUTO,
                              )
                         .batch(self.BATCH_SIZE)
-                        .map(lambda x: (imgaug_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
-                        
+                        # .map(lambda x: (imgaug_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                        .map(lambda x: (tf.py_function(imgaug_randaug,  [x], [tf.float32])[0]), num_parallel_calls=AUTO)
                         .prefetch(AUTO)
                         )
 
-        train_ds = tf.data.Dataste.zip((train_ds_one, train_ds_two))
+        train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
 
         return train_ds
 
 
 # sample Beta Distribution
-
 
 class Dataset_mixture():
 

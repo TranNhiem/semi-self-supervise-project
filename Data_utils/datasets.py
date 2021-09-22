@@ -53,9 +53,8 @@ class CIFAR100_dataset():
         return train_ds, self.test_ds
 
     def ssl_Simclr_Augment_policy(self):
-        x_train = self.x_train / 255.
 
-        train_ds_one = (tf.data.Dataset.from_tensor_slices(x_train)
+        train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
                         .shuffle(self.BATCH_SIZE * 100, seed=SEED)
                         .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
                              num_parallel_calls=AUTO,
@@ -65,7 +64,7 @@ class CIFAR100_dataset():
                         .prefetch(AUTO)
                         )
 
-        train_ds_two = (tf.data.Dataset.from_tensor_slices(x_train)
+        train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
                         .shuffle(self.BATCH_SIZE * 100, seed=SEED)
                         .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
                              num_parallel_calls=AUTO,
@@ -245,6 +244,7 @@ class CIFAR100_dataset():
             train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
 
         elif mode == "crop":
+            print("Implementation Random Crop")
 
             train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
                             .shuffle(self.BATCH_SIZE * 100, seed=SEED)
@@ -269,6 +269,7 @@ class CIFAR100_dataset():
             train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
 
         elif mode == "global_local_crop":
+            print("Implementation Global and Local Views")
 
             train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
                             .shuffle(self.BATCH_SIZE * 100, seed=SEED)
@@ -299,7 +300,6 @@ class CIFAR100_dataset():
 
 
 # sample Beta Distribution
-
 class Dataset_mixture():
 
     def __init__(self, IMG_SIZE, BATCH_SIZE):

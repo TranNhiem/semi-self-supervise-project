@@ -83,9 +83,11 @@ def tfa_randaug_rand_ditris_uniform_croping(image, num_transform, magnitude, cro
         image_shape = tf.cast(crop_size * 0.8, dtype=tf.int32)
         image_shape = tf.cast(image_shape, tf.float32)
         image = tf.image.resize(image, (image_shape, image_shape))
+
     size = tf.random.uniform(shape=(
         1,), minval=min_scale*image_shape, maxval=max_scale*image_shape, dtype=tf.float32)
     size = tf.cast(size, tf.int32)[0]
+    image = tf.image.resize(size, (crop_size, crop_size))
 
     augmenter_apply = RandAugment(
         num_layers=num_transform, magnitude=magnitude)
@@ -97,6 +99,8 @@ def tfa_randaug_rand_ditris_uniform_croping(image, num_transform, magnitude, cro
 
 '''Version2  RandAug Augmentation'''
 # rand_aug = iaa.RandAugment(n=2, m=7)
+
+
 def imgaug_randaug(images, num_transform, magnitude):
     '''
     Args:

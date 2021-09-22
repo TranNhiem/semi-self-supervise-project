@@ -30,6 +30,7 @@ def color_jitter(image, strength=[0.4, 0.4, 0.2, 0.1]):
     return x
 # Alternative random_crop (Simclr_github)
 
+
 def flip_random_crop(image, crop_size):
     '''
     Args: 
@@ -94,8 +95,10 @@ def gaussian_blur(image, kernel_size, sigma, padding='SAME'):
         blurred = tf.squeeze(blurred, axis=0)
     return blurred
 
-## Attention we also can implement Batches 
-def random_blur(image, ):#IMG_SIZE
+# Attention we also can implement Batches
+
+
+def random_blur(image, ):  # IMG_SIZE
     '''
     Args: 
       Image: A tensor [height, width, channels]
@@ -104,8 +107,8 @@ def random_blur(image, ):#IMG_SIZE
     Returns: 
       A image tensor that Blur
     '''
-    #finding image using shape of tensor
-    IMG_SIZE= image.shape[1]
+    # finding image using shape of tensor
+    IMG_SIZE = image.shape[1]
     sigma = tf.random.uniform([], 0.1, 2.0, dtype=tf.float32)
     image_blur = gaussian_blur(
         image, kernel_size=IMG_SIZE // 10, sigma=sigma, padding='SAME')
@@ -118,7 +121,9 @@ def random_apply(func, x, p):
     else:
         return x
 
-#In Implementation the Crop_size should equal to IMG_SIZE or smaller
+# In Implementation the Crop_size should equal to IMG_SIZE or smaller
+
+
 def custom_augment(image, crop_size):
     # IMG_SIZE=IMG_SIZE
     # As discussed in the SimCLR paper, the series of augmentation
@@ -128,4 +133,5 @@ def custom_augment(image, crop_size):
     image = random_apply(color_jitter, p=0.8, x=image, )
     image = random_apply(color_drop, p=0.2, x=image, )
     image = random_apply(random_blur, p=1.0, x=image,)
+    image = tf.cast(image, tf.float32)/255.
     return image

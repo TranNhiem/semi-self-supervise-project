@@ -2,9 +2,10 @@ import numpy as np
 import tensorflow as tf
 # Augmentation Policy
 import imgaug.augmenters as iaa
-from Data_augmentation_policy.Simclr_augment import custom_augment
-from Data_augmentation_policy.RandAugment import tfa_randaug, imgaug_randaug
-from official.vision.image_classification.augment import RandAugment
+from Data_augmentation_policy.Simclr_augment_random import custom_augment
+from Data_augmentation_policy.RandAugment import tfa_randaug, tfa_randaug_rand_crop_fliping, tfa_randaug_rand_ditris_uniform_croping
+from Data_augmentation_policy.Auto_Augment import tfa_AutoAugment, tfa_AutoAugment_rand_crop_flip, tfa_AutoAugment_rand_distribe_crop_global_local_views_flip
+from official.vision.image_classification.augment import RandAugment, AutoAugment
 
 SEED = 26
 AUTO = tf.data.experimental.AUTOTUNE
@@ -77,32 +78,6 @@ class CIFAR100_dataset():
         train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
         return train_ds
 
-    def ssl_Randaug_Augment_TFA_policy(self, num_transform, magnitude):
-
-        train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
-                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
-                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
-                             num_parallel_calls=AUTO,
-                             )
-                        .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
-                        .batch(self.BATCH_SIZE)
-                        .prefetch(AUTO)
-                        )
-
-        train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
-                        .shuffle(self.BATCH_SIZE * 100, seed=SEED)
-                        .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
-                             num_parallel_calls=AUTO,
-                             )
-                        .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
-                        .batch(self.BATCH_SIZE)
-                        .prefetch(AUTO)
-                        )
-
-        train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
-
-        return train_ds
-
     def ssl_Randaug_Augment_IMGAUG_policy(self, num_transform, magnitude):
 
         rand_aug_apply = iaa.RandAugment(n=num_transform, m=magnitude)
@@ -148,6 +123,177 @@ class CIFAR100_dataset():
                         )
 
         train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        return train_ds
+
+    def ssl_Randaug_Augment_TFA_policy(self, num_transform, magnitude, crop_size=None, min_scale=0.3, max_scale=1, high_resol=True, mode="original"):
+        if crop_size is None:
+            raise ValueError("you enter invalid crop_size")
+        #mode ["original", "crop", "global_local_crop"]
+        if high_resol:
+            print("You Implement the Global Views")
+        else:
+            print("you implement local views")
+
+        if mode == "original":
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug(x, num_transform, magnitude)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        elif mode == "crop":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug_rand_crop_fliping(x, num_transform, magnitude, crop_size)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug_rand_crop_fliping(x, num_transform, magnitude, crop_size)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        elif mode == "global_local_crop":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug_rand_ditris_uniform_croping(x, num_transform, magnitude, crop_size, min_scale, max_scale, high_resol=high_resol)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_randaug_rand_ditris_uniform_croping(x, num_transform, magnitude, crop_size, min_scale, max_scale, high_resol=high_resol)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        else:
+            raise ValueError("Implementation mode is node in design")
+
+        return train_ds
+
+    def ssl_Auto_Augment_TFA_policy(self, crop_size, min_scale, max_scale, high_resol=True, mode="ogirinal"):
+
+        if crop_size is None:
+            raise ValueError("you enter invalid crop_size")
+        #mode ["original", "crop", "global_local_crop"]
+        if high_resol:
+            print("You Implement the Global Views")
+        else:
+            print("you implement local views")
+
+        if mode == "original":
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment(x,)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment(x,)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        elif mode == "crop":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment_rand_crop_flip(x,  crop_size)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment_rand_crop_flip(x, crop_size)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        elif mode == "global_local_crop":
+
+            train_ds_one = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment_rand_distribe_crop_global_local_views_flip(x,  crop_size, min_scale, max_scale, high_resol=high_resol)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds_two = (tf.data.Dataset.from_tensor_slices(self.x_train)
+                            .shuffle(self.BATCH_SIZE * 100, seed=SEED)
+                            .map(lambda x: (tf.image.resize(x, (self.IMG_SIZE, self.IMG_SIZE))),
+                                 num_parallel_calls=AUTO,
+                                 )
+                            .map(lambda x: (tfa_AutoAugment_rand_distribe_crop_global_local_views_flip(x, crop_size, min_scale, max_scale, high_resol=high_resol)), num_parallel_calls=AUTO)
+                            .batch(self.BATCH_SIZE)
+                            .prefetch(AUTO)
+                            )
+
+            train_ds = tf.data.Dataset.zip((train_ds_one, train_ds_two))
+
+        else:
+            raise ValueError("Implementation mode is node in design")
 
         return train_ds
 

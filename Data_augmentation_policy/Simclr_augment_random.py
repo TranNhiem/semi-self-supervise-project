@@ -30,7 +30,6 @@ def color_jitter(image, strength=[0.4, 0.4, 0.2, 0.1]):
     return x
 # Alternative random_crop (Simclr_github)
 
-
 def flip_random_crop(image, crop_size):
     '''
     Args: 

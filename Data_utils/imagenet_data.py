@@ -1,3 +1,12 @@
+'''
+This Implementaion three Different Augmentation Strategy for ImageNet Dataset
+1. Baseline - SimCLR Augmentation 
+2. RandAug - RandAug Augmentation (Original and Modify)
+3. AutoAugment -- Auto Augmentation Policies 
+
+'''
+
+
 import numpy as np
 import tensorflow as tf
 # Augmentation Policy

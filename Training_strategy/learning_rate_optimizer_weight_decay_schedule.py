@@ -22,10 +22,7 @@ FineTuning Configure
 ************************************************************************************
 1. Learning Rate
 
-
-2. Optimizer
-
-3. Regularization
+2. Optimizer (Regularization weight Decay)
 
 '''
 
@@ -64,10 +61,23 @@ def get_train_steps(num_examples):
     return train_steps
 
 
+'''
+********************************************
+Training Configure
+********************************************
+1. Learning Rate
+    + particular implementation : Scale Learning Rate Linearly with Batch_SIZE 
+    (Warmup: Learning Implementation, and Cosine Anealing + Linear scaling)
+   
+    # optional not implement yet
+    + Schedule Learning with Constrain-Update during training
+
+'''
 # Implementation form SimCLR paper (Linear Scale and Sqrt Scale)
 # Debug and Visualization
 # Section SimCLR Implementation Learning rate BYOL implementation
 # https://colab.research.google.com/drive/1MWgcDAqnB0zZlXz3fHIW0HLKwZOi5UBb?usp=sharing
+
 
 class WarmUpAndCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
     """Applies a warmup schedule on a given learning rate decay schedule.
@@ -109,6 +119,20 @@ class WarmUpAndCosineDecay(tf.keras.optimizers.schedules.LearningRateSchedule):
                                      cosine_decay(step - warmup_steps))
 
             return learning_rate
+
+
+'''
+********************************************
+Training Configure
+********************************************
+2. Optimizer Strategy + Regularization (Weight Decay)
+    The optimizer will have three Options
+    1. Orginal 
+    2. Implmentation with Weight Decay
+    3. Implementation with Gradient Centralization
+    4  Implementation with Weight Decay and Gradient Centralization 
+    ## Optional Consider Clip_Norm strategy
+'''
 
 
 class get_optimizer():

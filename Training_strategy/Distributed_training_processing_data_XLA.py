@@ -24,12 +24,12 @@ Three Important things in Distributed Training
 
 '''
 
-
+import timeit
 import tensorflow as tf
 import os
 import sys
 import numpy as np
-from tensorflow.python.ops.gen_math_ops import mul
+#from tensorflow.python.ops.gen_math_ops import mul
 import json
 
 ################################################################################
@@ -38,7 +38,7 @@ import json
 ################################################################################
 
 # enbale XAL
-tf.config.optimizer.set_jit(True)
+# tf.config.optimizer.set_jit(True)
 Auto = tf.data.experimental.AUTOTUNE
 
 
@@ -52,6 +52,23 @@ def mnist_dataset(batch_size):
         (x_train, y_train)).shuffle(60000)
 
     return train_dataset
+
+
+def dataset_fn_auto_shard(global_batch_size, input_context):
+    batch_size = input_context.get_per_replica_batch_size(global_batch_size)
+
+    dataset = mnist_dataset(batch_size)
+    option = tf.data.Options()
+    option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+
+    dataset = dataset.with_options(option)
+    dataset = dataset.shard(input_context.num_input_pipelines,
+                            input_context.input_pipeline_id)
+    dataset = dataset.batch(batch_size)
+    # 2. modify dataset with prefetch
+    dataset = dataset.prefetch(Auto)
+
+    return dataset
 
 
 def dataset_fn(global_batch_size, input_context):
@@ -84,7 +101,8 @@ def build_cnn_model():
 #     sys.path.insert(0, '.')
 
 
-'''There are two strategy of Multi-worker training (Syncronously vs Asyncronously)
+'''
+There are two strategy of Multi-worker training (Syncronously vs Asyncronously)
 ## Documentation for Distributed Training Tensorflow 
 
 2. multiworker_strategy training (Three Level Optimization)
@@ -152,115 +170,125 @@ strategy = tf.distribute.MultiWorkerMirroredStrategy(
 #strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
-    # 3 Auto-Shard data Across Workers
+    def main():
+        # 3 Auto-Shard data Across Workers
+        per_worker_batch_size = 400
+        num_workers = 2  # len(tf_config['cluster']['worker'])
+        global_batch_size = per_worker_batch_size * num_workers
 
-    per_worker_batch_size = 400
-    num_workers = 2  # len(tf_config['cluster']['worker'])
-    global_batch_size = per_worker_batch_size * num_workers
+        multi_worker_dataset = strategy.distribute_datasets_from_function(
+            lambda input_context: dataset_fn_auto_shard(global_batch_size, input_context))
 
-    multi_worker_dataset = strategy.distribute_datasets_from_function(
-        lambda input_context: dataset_fn(global_batch_size, input_context))
+        model = build_cnn_model()
 
-    model = build_cnn_model()
+        optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
+        train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            name='train_accuracy')
 
-    optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
-    train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        name='train_accuracy')
+        @tf.function()
+        def train_step(iterator):
+            """Training step function."""
+            def step_fn(inputs):
+                # Per-Replica step function
+                x, y = inputs
+                with tf.GradientTape() as tape:
+                    predictions = model(x, training=True)
 
-    @tf.function
-    def train_step(iterator):
-        """Training step function."""
-        def step_fn(inputs):
-            # Per-Replica step function
-            x, y = inputs
-            with tf.GradientTape() as tape:
-                predictions = model(x, training=True)
+                    per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                                   reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
+                    loss = tf.nn.compute_average_loss(
+                        per_batch_loss, global_batch_size=global_batch_size)
+                grads = tape.gradient(loss, model.trainable_variables)
+                optimizer.apply_gradients(
+                    zip(grads, model.trainable_variables))
+                train_accuracy.update_state(y, predictions)
+                return loss
 
-                per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
-                                                                               reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
-                loss = tf.nn.compute_average_loss(
-                    per_batch_loss, global_batch_size=global_batch_size)
-            grads = tape.gradient(loss, model.trainable_variables)
-            optimizer.apply_gradients(zip(grads, model.trainable_variables))
-            train_accuracy.update_state(y, predictions)
-            return loss
+            per_replica_losses = strategy.run(step_fn, args=(next(iterator), ))
+            return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 
-        per_replica_losses = strategy.run(step_fn, args=(next(iterator), ))
-        return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+        # Checkpoint saving and Restoring weights Not whole model
+        from multiprocessing import util
+        # temperal_checkpoint dir
+        checkpoint_dir = os.path.join(util.get_temp_dir(), 'ckpt')
 
-    # Checkpoint saving and Restoring weights Not whole model
-    from multiprocessing import util
-    # temperal_checkpoint dir
-    checkpoint_dir = os.path.join(util.get_temp_dir(), 'ckpt')
+        def chief_worker(task_type, task_id):
+            return task_type is None or task_type == 'chief' or (task_type == 'worker' and task_id == 0)
 
-    def chief_worker(task_type, task_id):
-        return task_type is None or task_type == 'chief' or (task_type == 'worker' and task_id == 0)
+        def _get_temp_dir(dirpath, task_id):
 
-    def _get_temp_dir(dirpath, task_id):
+            base_dirpath = 'workertemp_' + str(task_id)
+            # Note future will just define our custom saving dir
+            temp_dir = os.path.join(dirpath, base_dirpath)
+            tf.io.gfile.makedirs(temp_dir)
+            return temp_dir
 
-        base_dirpath = 'workertemp_' + str(task_id)
-        # Note future will just define our custom saving dir
-        temp_dir = os.path.join(dirpath, base_dirpath)
-        tf.io.gfile.makedirs(temp_dir)
-        return temp_dir
+        def write_filepath(filepath, task_type, task_id):
+            dirpath = os.path.dirname(filepath)
 
-    def write_filepath(filepath, task_type, task_id):
-        dirpath = os.path.dirname(filepath)
+            base = os.path.basename(filepath)
 
-        base = os.path.basename(filepath)
+            if not chief_worker(task_type, task_id):
+                dirpath = _get_temp_dir(dirpath, task_id)
 
-        if not chief_worker(task_type, task_id):
-            dirpath = _get_temp_dir(dirpath, task_id)
+            return os.path.join(dirpath, base)
 
-        return os.path.join(dirpath, base)
+        # Saving the variable with tf.train.Checkpoint & tf.train.CheckpointManager
+        epoch = tf.Variable(initial_value=tf.constant(
+            0, dtype=tf.dtypes.int64), name='epoch')
 
-    # Saving the variable with tf.train.Checkpoint & tf.train.CheckpointManager
-    epoch = tf.Variable(initial_value=tf.constant(
-        0, dtype=tf.dtypes.int64), name='epoch')
+        step_in_epoch = tf.Variable(initial_value=tf.constant(
+            0, dtype=tf.dtypes.int64), name='step_in_epoch')
 
-    step_in_epoch = tf.Variable(initial_value=tf.constant(
-        0, dtype=tf.dtypes.int64), name='step_in_epoch')
+        task_type, task_id = (strategy.cluster_resolver.task_type,
+                              strategy.cluster_resolver.task_id)
 
-    task_type, task_id = (strategy.cluster_resolver.task_type,
-                          strategy.cluster_resolver.task_id)
+        checkpoint = tf.train.Checkpoint(
+            model=model, epoch=epoch, step_in_epoch=step_in_epoch)
 
-    checkpoint = tf.train.Checkpoint(
-        model=model, epoch=epoch, step_in_epoch=step_in_epoch)
+        write_checkpoint_dir = write_filepath(
+            checkpoint_dir, task_type, task_id)
 
-    write_checkpoint_dir = write_filepath(checkpoint_dir, task_type, task_id)
+        checkpoint_manager = tf.train.CheckpointManager(
+            checkpoint, directory=write_checkpoint_dir, max_to_keep=1)
 
-    checkpoint_manager = tf.train.CheckpointManager(
-        checkpoint, directory=write_checkpoint_dir, max_to_keep=1)
+        # You need to restore training
+        last_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
 
-    # You need to restore training
-    last_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+        if last_checkpoint:
+            checkpoint.restore(last_checkpoint)
 
-    if last_checkpoint:
-        checkpoint.restore(last_checkpoint)
+        # Training Loop
+        EPOCHS = 20
+        Num_step_per_epoch = 70  # testing #len_imgs/batch_size
 
-    # Training Loop
-    EPOCHS = 20
-    Num_step_per_epoch = 70  # testing #len_imgs/batch_size
+        while epoch.numpy() < EPOCHS:
+            iterator = iter(multi_worker_dataset)
+            total_loss = 0.0
+            num_batches = 0
 
-    while epoch.numpy() < EPOCHS:
-        iterator = iter(multi_worker_dataset)
-        total_loss = 0.0
-        num_batches = 0
+            while step_in_epoch.numpy() < Num_step_per_epoch:
+                total_loss += train_step(iterator)
+                num_batches += 1
+                step_in_epoch.assign_add(1)
 
-        while step_in_epoch.numpy() < Num_step_per_epoch:
-            total_loss += train_step(iterator)
-            num_batches += 1
-            step_in_epoch.assign_add(1)
+            train_loss = total_loss / num_batches
+            print('Epoch: %d, accuracy: %f, training_loss: %f' %
+                  (epoch.numpy(), train_accuracy.result(), train_loss))
+            train_accuracy.reset_states()
 
-        train_loss = total_loss / num_batches
-        print('Epoch: %d, accuracy: %f, training_loss: %f' %
-              (epoch.numpy(), train_accuracy.result(), train_loss))
-        train_accuracy.reset_states()
+            checkpoint_manager.save()
 
-        checkpoint_manager.save()
+            if not chief_worker(task_type, task_id):
+                tf.io.gfile.rmtree(write_checkpoint_dir)
 
-        if not chief_worker(task_type, task_id):
-            tf.io.gfile.rmtree(write_checkpoint_dir)
+            epoch.assign_add(1)
+            step_in_epoch.assign(0)
 
-        epoch.assign_add(1)
-        step_in_epoch.assign(0)
+    if __name__ == '__main__':
+
+        start_time = timeit.default_timer()
+        main()
+        end_time = timeit.default_timer()
+
+        print(f"Complete_pipeline time,{end_time - start_time}")

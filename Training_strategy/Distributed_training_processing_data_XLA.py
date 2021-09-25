@@ -33,9 +33,13 @@ from tensorflow.python.ops.gen_math_ops import mul
 import json
 
 ################################################################################
-'''Data Processing -- tf.data and '''
+'''Data Processing -- 1.. tf.data 2.. Adding @tf function, 3..adding XAL (Lineat algebra accelerate) '''
 
 ################################################################################
+
+# enbale XAL
+tf.config.optimizer.set_jit(True)
+Auto = tf.data.experimental.AUTOTUNE
 
 
 def mnist_dataset(batch_size):
@@ -46,6 +50,7 @@ def mnist_dataset(batch_size):
     y_train = y_train.astype(np.int64)
     train_dataset = tf.data.Dataset.from_tensor_slices(
         (x_train, y_train)).shuffle(60000)
+
     return train_dataset
 
 
@@ -55,8 +60,10 @@ def dataset_fn(global_batch_size, input_context):
     dataset = dataset.shard(input_context.num_input_pipelines,
                             input_context.input_pipeline_id)
     dataset = dataset.batch(batch_size)
-    return dataset
+    # 2. modify dataset with prefetch
+    dataset = dataset.prefetch(Auto)
 
+    return dataset
 
 
 def build_cnn_model():
@@ -114,8 +121,8 @@ def build_cnn_model():
 # 4. Model checkpoint -- Logs saving values
 # 5. Consider type of training mode -- (Sync or Asyncro) training
 
-## Here the Configure In the Chief Machine
-## Machine 0
+# Here the Configure In the Chief Machine
+# Machine 0
 # tf_config = {
 #     "cluster": {
 #        'chief': ['140.115.59.130:12345']
@@ -127,13 +134,13 @@ def build_cnn_model():
 #     "task": {'type': 'chief', 'index': 0}
 # }
 
-## Configure in Other worker (mean other machines)
-## machine 1 
-#tf_config is the same
+# Configure in Other worker (mean other machines)
+# machine 1
+# tf_config is the same
 #     "task": {'type': 'worker', 'index': 0}
 # }
-## machine 2
-#tf_config is the same 
+# machine 2
+# tf_config is the same
 #     "task": {'type': 'worker', 'index': 1}
 # }
 
@@ -147,7 +154,7 @@ strategy = tf.distribute.MultiWorkerMirroredStrategy(
 with strategy.scope():
     # 3 Auto-Shard data Across Workers
 
-    per_worker_batch_size = 200
+    per_worker_batch_size = 400
     num_workers = 2  # len(tf_config['cluster']['worker'])
     global_batch_size = per_worker_batch_size * num_workers
 
@@ -178,7 +185,6 @@ with strategy.scope():
             train_accuracy.update_state(y, predictions)
             return loss
 
-        
         per_replica_losses = strategy.run(step_fn, args=(next(iterator), ))
         return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 

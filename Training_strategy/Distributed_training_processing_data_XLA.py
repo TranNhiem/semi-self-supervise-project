@@ -33,7 +33,8 @@ from tensorflow.python.ops.gen_math_ops import mul
 import json
 
 ################################################################################
-'''Section for building model and test training'''
+'''Data Processing -- tf.data and '''
+
 ################################################################################
 
 
@@ -176,6 +177,8 @@ with strategy.scope():
             optimizer.apply_gradients(zip(grads, model.trainable_variables))
             train_accuracy.update_state(y, predictions)
             return loss
+
+        
         per_replica_losses = strategy.run(step_fn, args=(next(iterator), ))
         return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 

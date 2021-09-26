@@ -56,7 +56,7 @@ Three Important things in Distributed Training
     (How to finding the NCCL pack_layer--> if set too low and set too high)
 
 '''
-
+import argparse
 import timeit
 import tensorflow as tf
 import os
@@ -64,24 +64,36 @@ import sys
 import numpy as np
 # from tensorflow.python.ops.gen_math_ops import mul
 import json
+# Package for mix_precision
+from tensorflow.keras import mixed_precision
+from tensorflow.python.keras.backend import gradients
+
 
 ################################################################################
-'''Data Processing -- 1.. tf.data 2.. Adding @tf function, 3..adding XAL (Lineat algebra accelerate) '''
+'''Data Processing -- 1.. tf.data 2.. Adding @tf function, 3..adding XAL (Lineat algebra accelerate) + Mix Precision'''
 
 ################################################################################
 
-# enbale XAL ==> enable compatable with tensorflowV1
-tf.compat.V1.enable_eager_execution()
+
 # Optional is autocluster
-tf.config.optimizer.set_jit(True)
+# tf.config.optimizer.set_jit(True)
 Auto = tf.data.experimental.AUTOTUNE
+# Configure for mix Percision
+'''Attention this configure for model.fit'''
+# policy = mixed_precision.Policy('mixed_float16')
+# mixed_precision.set_global_policy(policy)
+# # There are two things consider (1 layer computation 2 layer variable)
+# # mix precision layer computation done in fp 16
+# # layer variable will done in fp 32
+# print("Layer compute dtype: %s" % policy.compute_dtype)
+# print("layer variable dtype: %s" % policy.variable_dtype)
 
 
 class distributed_dataset():
     '''
     Testing the Data Distribution with two options
     1. tf.data + @tf.function 
-    2. tf.data + @tf.function + XLA(compile_jit=True)
+    2. tf.data + @tf.function + XLA(compile_jit=True) => using tf-nightly , tensorflow =>(experimental_compile=True)
     3. tf.data + @tf.function + XLA + Mix_Precision
 
     '''
@@ -101,10 +113,11 @@ class distributed_dataset():
         return train_dataset
 
     # 1.  tf.data + @tf.function
+    # @tf.function(experimental_compile=True) (Unsupport)
     def dataset_fn(self, input_context):
         batch_size = input_context.get_per_replica_batch_size(
             self.global_batch_size)
-        dataset = self.mnist_dataset(batch_size)
+        dataset = self.mnist_dataset()
         dataset = dataset.shard(input_context.num_input_pipelines,
                                 input_context.input_pipeline_id)
         dataset = dataset.batch(batch_size)
@@ -116,7 +129,7 @@ class distributed_dataset():
     def dataset_fn_auto_shard(self, input_context):
         batch_size = input_context.get_per_replica_batch_size(
             self.global_batch_size)
-        dataset = self.mnist_dataset(batch_size)
+        dataset = self.mnist_dataset()
         option = tf.data.Options()
         # others options of options
         option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
@@ -129,11 +142,11 @@ class distributed_dataset():
         return dataset
 
     # 2. tf.data + @tf.function + XLA(compile_jit=True)
-    @tf.function(jit_compile=True)
+    @tf.function(experimental_compile=True)  # (unsupport)
     def dataset_fn_auto_shard_XLA(self, input_context):
         batch_size = input_context.get_per_replica_batch_size(
             self.global_batch_size)
-        dataset = self.mnist_dataset(batch_size)
+        dataset = self.mnist_dataset()
         option = tf.data.Options()
         # others options of options
         option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
@@ -234,43 +247,81 @@ strategy = tf.distribute.MultiWorkerMirroredStrategy(
 
 with strategy.scope():
 
-    def main():
+    def main(args):
         # 3 Auto-Shard data Across Workers
         per_worker_batch_size = 400
         num_workers = 2  # len(tf_config['cluster']['worker'])
         global_batch_size = per_worker_batch_size * num_workers
         dataset = distributed_dataset(global_batch_size)
         multi_worker_dataset = strategy.distribute_datasets_from_function(
-            lambda input_context: dataset.dataset_fn_auto_shard_XLA(global_batch_size, input_context))
+            lambda input_context: dataset.dataset_fn(input_context))
 
         model = build_cnn_model()
 
-        optimizer = tf.keras.optimizers.RMSprop(learning_rate=0.001)
         train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
             name='train_accuracy')
-
+        # using tf-nightly
         # @tf.function(jit_compile=True)
-        @tf.function()
-        def train_step(iterator):
-            """Training step function."""
-            def step_fn(inputs):
-                # Per-Replica step function
-                x, y = inputs
-                with tf.GradientTape() as tape:
-                    predictions = model(x, training=True)
+        # using tf 2.4
 
-                    per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
-                                                                                   reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
-                    loss = tf.nn.compute_average_loss(
-                        per_batch_loss, global_batch_size=global_batch_size)
-                grads = tape.gradient(loss, model.trainable_variables)
-                optimizer.apply_gradients(
-                    zip(grads, model.trainable_variables))
-                train_accuracy.update_state(y, predictions)
-                return loss
+        # @tf.function(experimental_compile=True)
+        if args.mode == "mix_precision_fp16":
+            print("you implement mix_precision")
+            optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+            optimizer = mixed_precision.LossScaleOptimizer(optimizer)
 
-            per_replica_losses = strategy.run(step_fn, args=(next(iterator), ))
-            return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+            @tf.function()
+            def train_step(iterator):
+                """Training step function."""
+                def step_fn(inputs):
+                    # Per-Replica step function
+                    x, y = inputs
+                    with tf.GradientTape() as tape:
+                        predictions = model(x, training=True)
+
+                        per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                                       reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
+                        loss = tf.nn.compute_average_loss(
+                            per_batch_loss, global_batch_size=global_batch_size)
+                        scale_loss = optimizer.get_scaled_loss(loss)
+
+                    scaled_grads = tape.gradient(
+                        scale_loss, model.trainable_variables)
+                    gradients = optimizer.get_unscaled_gradients(scaled_grads)
+                    optimizer.apply_gradients(
+                        zip(gradients, model.trainable_variables))
+                    train_accuracy.update_state(y, predictions)
+                    return loss
+
+                per_replica_losses = strategy.run(
+                    step_fn, args=(next(iterator), ))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+
+        else:
+            print("you implement original fp32")
+
+            @tf.function()
+            def train_step(iterator):
+                """Training step function."""
+                def step_fn(inputs):
+                    # Per-Replica step function
+                    x, y = inputs
+                    with tf.GradientTape() as tape:
+                        predictions = model(x, training=True)
+
+                        per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                                       reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
+                        loss = tf.nn.compute_average_loss(
+                            per_batch_loss, global_batch_size=global_batch_size)
+                    grads = tape.gradient(loss, model.trainable_variables)
+                    optimizer.apply_gradients(
+                        zip(grads, model.trainable_variables))
+                    train_accuracy.update_state(y, predictions)
+                    return loss
+
+                per_replica_losses = strategy.run(
+                    step_fn, args=(next(iterator), ))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 
         # Checkpoint saving and Restoring weights Not whole model
         from multiprocessing import util
@@ -351,9 +402,15 @@ with strategy.scope():
             step_in_epoch.assign(0)
 
     if __name__ == '__main__':
+        parser = argparse.ArgumentParser()
+        parser.add_argument('--mode', type=str, default="mix_precision_fp16",
+                            help='mix_precision_implementation or orignal mode')
 
+        args = parser.parse_args()
         start_time = timeit.default_timer()
-        main()
+
+        main(args)
+
         end_time = timeit.default_timer()
 
         print(f"Time runing model,{end_time - start_time}")

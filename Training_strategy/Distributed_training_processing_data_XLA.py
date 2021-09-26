@@ -1,26 +1,59 @@
 '''
-Three Important things in Distributed Training 
-1.. Data_Processing for Mutli-GPUS
-#Reference Discuss more in Slide material prepare tensorflow_hardware_software_utilization
+Three Important things in Distributed Training
+1.. Tracking The Experiment with Tensoboard identify bottelneck for training through Put
+    #Reference 1 optimize tensorflow GPU performance with tensorflow profiler
+    #Reference 2 Profile tensorflow performance
+
+2.. Data_Processing for Mutli-GPUS
+# Reference Discuss more in Slide material prepare tensorflow_hardware_software_utilization
 
 --> Data_processing
     + Single Machine Data throughput
     1.- Python data Generator (the less utilize hardware -- is not efficient)
-    2. - tf.data.Datset 
+    
+    2. - tf.data.Datset
     3.- tf.data.Dataset + tf.function (@tf.function training loop)
-    4. - tf.data.Dataset + tf.function + XLA 
-    #This line of code enable XLA
-    (accelerate Linear Algebar ) (tf.config.optizer.set_jit(True))
-    5. - Using Mix-Precision for Optimize faster Through Put of reading data 
-        By Get Configure in the Optimizer 
-    # these serveral Line of Code for the implementation 
+
+    ********************************************************************
+    4. - tf.data.Dataset + tf.function + XLA   (accelerate Linear Algebar )
+    # This line of code enable XLA (This method basically Fuse the operation sub-graph to larger graph)
+    #Reference XLA Optimizing Compiler for ML --> Checkout the Video for Detail understanding
+
+    +. enable XLA -> tf.config.optizer.set_jit(True)) (True & Autoclustering)
+    (Autoclustering usally has wire or reducing model performance)
+
+    + implement XLA with @tf.function(jit_compile=True) On the top function for accelerate compute
+    Be aware of un-support operation
+
+    *********************************************************************
+    5. - Using Mix-Precision for Optimize faster Through Put of reading data
+        By Get Configure in the Optimizer
+    # Reference Mixed precision Tensorflow --> with Notebook implementation 
+    # Serveral Line of Code for the implementation
         5.1 Loss cale for (changing the numeric -- Not changine any mathematic equa)
         loss_cale= "dynamic
-        5.2 Policy 
-        policy =tf.keras.mix_precision.experimental.Policy("mix_float16", loss_scale=loss_scale)
+        5.2 Policy
+        policy =tf.keras.mix_precision.experimental.Policy(
+            "mix_float16", loss_scale=loss_scale)
         tf.keras.mix_precision.experimental.set_policy(policy)
 
-        optimizer= tf.keras.mix_precision.experimental.LossScaleOptimizer(optimizer, loss_scale=loss_scale)
+        optimizer= tf.keras.mix_precision.experimental.LossScaleOptimizer(
+            optimizer, loss_scale=loss_scale)
+
+3.. Distribution training strategy with
+    **********************************
+    1 & 3 in Tensorflow 2.2 still manually set parameter and
+    configure base testing GPU performance
+    **********************************
+    1. NCCL Throughput Tuning (NCCL parameter should testing with the GPU type)
+    (Finding some reference about the Settinf NCCL Through Put for GPUs)
+
+    2. Reduce the numeric Precision in training loop to Fp16
+    (custome loop implementation)
+    +
+
+    3. Increasing the Gradient aggregation with backprop
+    (How to finding the NCCL pack_layer--> if set too low and set too high)
 
 '''
 
@@ -29,7 +62,7 @@ import tensorflow as tf
 import os
 import sys
 import numpy as np
-#from tensorflow.python.ops.gen_math_ops import mul
+# from tensorflow.python.ops.gen_math_ops import mul
 import json
 
 ################################################################################
@@ -37,50 +70,55 @@ import json
 
 ################################################################################
 
-# enbale XAL
-# tf.config.optimizer.set_jit(True)
+# enbale XAL ==> enable compatable with tensorflowV1
+tf.compat.V1.enable_eager_execution()
+# Optional is autocluster
+tf.config.optimizer.set_jit(True)
 Auto = tf.data.experimental.AUTOTUNE
 
 
-def mnist_dataset(batch_size):
-    (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
-    # The `x` arrays are in uint8 and have values in the range [0, 255].
-    # You need to convert them to float32 with values in the range [0, 1]
-    x_train = x_train / np.float32(255)
-    y_train = y_train.astype(np.int64)
-    train_dataset = tf.data.Dataset.from_tensor_slices(
-        (x_train, y_train)).shuffle(60000)
+class distributed_dataset():
 
-    return train_dataset
+    def __init__(self, global_batch_size):
+        self.global_batch_size = global_batch_size
 
+    @classmethod
+    def mnist_dataset(self, ):
+        (x_train, y_train), _ = tf.keras.datasets.mnist.load_data()
+        # The `x` arrays are in uint8 and have values in the range [0, 255].
+        # You need to convert them to float32 with values in the range [0, 1]
+        x_train = x_train / np.float32(255)
+        y_train = y_train.astype(np.int64)
+        train_dataset = tf.data.Dataset.from_tensor_slices(
+            (x_train, y_train)).shuffle(60000)
+        return train_dataset
 
-def dataset_fn_auto_shard(global_batch_size, input_context):
-    batch_size = input_context.get_per_replica_batch_size(global_batch_size)
+    @tf.function(jit_compile=True)
+    def dataset_fn_auto_shard(self, input_context):
+        batch_size = input_context.get_per_replica_batch_size(
+            self.global_batch_size)
+        dataset = self.mnist_dataset(batch_size)
+        option = tf.data.Options()
+        # others options of options
+        option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+        dataset = dataset.with_options(option)
+        dataset = dataset.shard(input_context.num_input_pipelines,
+                                input_context.input_pipeline_id)
+        dataset = dataset.batch(batch_size)
+        # 2. modify dataset with prefetch
+        dataset = dataset.prefetch(Auto)
+        return dataset
 
-    dataset = mnist_dataset(batch_size)
-    option = tf.data.Options()
-    option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
-
-    dataset = dataset.with_options(option)
-    dataset = dataset.shard(input_context.num_input_pipelines,
-                            input_context.input_pipeline_id)
-    dataset = dataset.batch(batch_size)
-    # 2. modify dataset with prefetch
-    dataset = dataset.prefetch(Auto)
-
-    return dataset
-
-
-def dataset_fn(global_batch_size, input_context):
-    batch_size = input_context.get_per_replica_batch_size(global_batch_size)
-    dataset = mnist_dataset(batch_size)
-    dataset = dataset.shard(input_context.num_input_pipelines,
-                            input_context.input_pipeline_id)
-    dataset = dataset.batch(batch_size)
-    # 2. modify dataset with prefetch
-    dataset = dataset.prefetch(Auto)
-
-    return dataset
+    def dataset_fn(self, input_context):
+        batch_size = input_context.get_per_replica_batch_size(
+            self.global_batch_size)
+        dataset = self.mnist_dataset(batch_size)
+        dataset = dataset.shard(input_context.num_input_pipelines,
+                                input_context.input_pipeline_id)
+        dataset = dataset.batch(batch_size)
+        # 2. modify dataset with prefetch
+        dataset = dataset.prefetch(Auto)
+        return dataset
 
 
 def build_cnn_model():
@@ -103,18 +141,18 @@ def build_cnn_model():
 
 '''
 There are two strategy of Multi-worker training (Syncronously vs Asyncronously)
-## Documentation for Distributed Training Tensorflow 
+# Documentation for Distributed Training Tensorflow
 
 2. multiworker_strategy training (Three Level Optimization)
     # https://www.youtube.com/watch?v=6ovfZW8pepo
     1: Tune NCCL to fully use the cross-host network.
-    (tensor 2 release 2020) --> NCCL_SOCKET_NTHREADS manually setting 
+    (tensor 2 release 2020) --> NCCL_SOCKET_NTHREADS manually setting
     runing experiment to find the optimal -(recommendation setting is 8)
 
 
     2: Gradient aggregation in float16(Mix precision training 16-- 32float )
     + Setting this in Custom training loop for faster compute and aggreate gradient
-    also configure in custom training loop 
+    also configure in custom training loop
 
     3: Parallel Overlap backward path computation with gradient aggregation
     + Setting pack_size base on nccl-allreduce benchmark finding optimal pack_size
@@ -167,17 +205,18 @@ communication_options = tf.distribute.experimental.CommunicationOptions(
     implementation=tf.distribute.experimental.CommunicationImplementation.NCCL)
 strategy = tf.distribute.MultiWorkerMirroredStrategy(
     communication_options=communication_options)
-#strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
+# strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy()
 
 with strategy.scope():
+
     def main():
         # 3 Auto-Shard data Across Workers
         per_worker_batch_size = 400
         num_workers = 2  # len(tf_config['cluster']['worker'])
         global_batch_size = per_worker_batch_size * num_workers
-
+        dataset = distributed_dataset(global_batch_size)
         multi_worker_dataset = strategy.distribute_datasets_from_function(
-            lambda input_context: dataset_fn_auto_shard(global_batch_size, input_context))
+            lambda input_context: dataset.dataset_fn_auto_shard(global_batch_size, input_context))
 
         model = build_cnn_model()
 
@@ -185,6 +224,7 @@ with strategy.scope():
         train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
             name='train_accuracy')
 
+        # @tf.function(jit_compile=True)
         @tf.function()
         def train_step(iterator):
             """Training step function."""

@@ -19,7 +19,7 @@ Three Important things in Distributed Training
     # This line of code enable XLA (This method basically Fuse the operation sub-graph to larger graph)
     #Reference XLA Optimizing Compiler for ML --> Checkout the Video for Detail understanding
 
-    +. enable XLA -> tf.config.optizer.set_jit(True)) (True & Autoclustering)
+    +. enable XLA -> tf.config.optizer.set_jit(True)) (True & auto_clustering, **Install tf-nightly**)
     (Autoclustering usally has wire or reducing model performance)
 
     + implement XLA with @tf.function(jit_compile=True) On the top function for accelerate compute
@@ -78,6 +78,13 @@ Auto = tf.data.experimental.AUTOTUNE
 
 
 class distributed_dataset():
+    '''
+    Testing the Data Distribution with two options
+    1. tf.data + @tf.function 
+    2. tf.data + @tf.function + XLA(compile_jit=True)
+    3. tf.data + @tf.function + XLA + Mix_Precision
+
+    '''
 
     def __init__(self, global_batch_size):
         self.global_batch_size = global_batch_size
@@ -93,7 +100,19 @@ class distributed_dataset():
             (x_train, y_train)).shuffle(60000)
         return train_dataset
 
-    @tf.function(jit_compile=True)
+    # 1.  tf.data + @tf.function
+    def dataset_fn(self, input_context):
+        batch_size = input_context.get_per_replica_batch_size(
+            self.global_batch_size)
+        dataset = self.mnist_dataset(batch_size)
+        dataset = dataset.shard(input_context.num_input_pipelines,
+                                input_context.input_pipeline_id)
+        dataset = dataset.batch(batch_size)
+        # 2. modify dataset with prefetch
+        dataset = dataset.prefetch(Auto)
+        return dataset
+
+    # 1.  tf.data + @tf.function  + Auto_Shard_policy
     def dataset_fn_auto_shard(self, input_context):
         batch_size = input_context.get_per_replica_batch_size(
             self.global_batch_size)
@@ -109,10 +128,16 @@ class distributed_dataset():
         dataset = dataset.prefetch(Auto)
         return dataset
 
-    def dataset_fn(self, input_context):
+    # 2. tf.data + @tf.function + XLA(compile_jit=True)
+    @tf.function(jit_compile=True)
+    def dataset_fn_auto_shard_XLA(self, input_context):
         batch_size = input_context.get_per_replica_batch_size(
             self.global_batch_size)
         dataset = self.mnist_dataset(batch_size)
+        option = tf.data.Options()
+        # others options of options
+        option.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
+        dataset = dataset.with_options(option)
         dataset = dataset.shard(input_context.num_input_pipelines,
                                 input_context.input_pipeline_id)
         dataset = dataset.batch(batch_size)
@@ -216,7 +241,7 @@ with strategy.scope():
         global_batch_size = per_worker_batch_size * num_workers
         dataset = distributed_dataset(global_batch_size)
         multi_worker_dataset = strategy.distribute_datasets_from_function(
-            lambda input_context: dataset.dataset_fn_auto_shard(global_batch_size, input_context))
+            lambda input_context: dataset.dataset_fn_auto_shard_XLA(global_batch_size, input_context))
 
         model = build_cnn_model()
 
@@ -331,4 +356,4 @@ with strategy.scope():
         main()
         end_time = timeit.default_timer()
 
-        print(f"Complete_pipeline time,{end_time - start_time}")
+        print(f"Time runing model,{end_time - start_time}")

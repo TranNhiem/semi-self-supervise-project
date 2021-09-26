@@ -69,10 +69,10 @@ from tensorflow.keras import mixed_precision
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--mode', type=str, default="mix_precision_fp16", choices=["mix_precision_fp16", "mix_pre_fp16_v1", "mix_per_pack_NCCL"],
+parser.add_argument('--mode', type=str, default="mix_precision_fp16_aggregate_grad_false", choices=["mix_precision_fp16", "mix_pre_fp16_v1", "mix_per_pack_NCCL"],
                     help='mix_precision_implementation or orignal mode')
 parser.add_argument('--communication_method', type=str,
-                    default="NCCL", choices=["NCCL", "auto", "Pack_size_NCCL"])
+                    default="Pack_size_NCCL", choices=["NCCL", "auto", "Pack_size_NCCL"])
 
 ################################################################################
 '''Data Processing -- 1.. tf.data 2.. Adding @tf function, 3..adding XAL (Lineat algebra accelerate) + Mix Precision'''
@@ -317,6 +317,72 @@ with strategy.scope():
                     step_fn, args=(next(iterator), ))
                 return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 
+        elif args.mode == "mix_precision_fp16" & args.communication_method == "Pack_size_NCCL":
+            print("you implement mix_precision")
+            optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+            optimizer = mixed_precision.LossScaleOptimizer(optimizer)
+
+            @tf.function()
+            def train_step(iterator):
+                """Training step function."""
+                def step_fn(inputs):
+                    # Per-Replica step function
+                    x, y = inputs
+                    with tf.GradientTape() as tape:
+                        predictions = model(x, training=True)
+
+                        per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                                       reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
+                        loss = tf.nn.compute_average_loss(
+                            per_batch_loss, global_batch_size=global_batch_size)
+                        scale_loss = optimizer.get_scaled_loss(loss)
+
+                    scaled_grads = tape.gradient(
+                        scale_loss, model.trainable_variables)
+                    gradients = optimizer.get_unscaled_gradients(scaled_grads)
+                    gradients = tf.distribute.get_replica_context().all_reduce(
+                        tf.distribute.ReduceOp.SUM, gradients, option=communication_options)
+                    optimizer.apply_gradients(
+                        zip(gradients, model.trainable_variables))
+                    train_accuracy.update_state(y, predictions)
+                    return loss
+
+                per_replica_losses = strategy.run(
+                    step_fn, args=(next(iterator), ))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+
+        elif args.mode == "mix_precision_fp16_aggregate_grad_false":
+            print("you implement mix_precision with aggreagte Grad set FALSE")
+            optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+            optimizer = mixed_precision.LossScaleOptimizer(optimizer)
+
+            @tf.function()
+            def train_step(iterator):
+                """Training step function."""
+                def step_fn(inputs):
+                    # Per-Replica step function
+                    x, y = inputs
+                    with tf.GradientTape() as tape:
+                        predictions = model(x, training=True)
+
+                        per_batch_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                                       reduction=tf.keras.losses.Reduction.NONE)(y, predictions)
+                        loss = tf.nn.compute_average_loss(
+                            per_batch_loss, global_batch_size=global_batch_size)
+                        scale_loss = optimizer.get_scaled_loss(loss)
+
+                    scaled_grads = tape.gradient(
+                        scale_loss, model.trainable_variables)
+                    gradients = optimizer.get_unscaled_gradients(scaled_grads)
+                    optimizer.apply_gradients(
+                        zip(gradients, model.trainable_variables), experimental_aggregate_gradients=False)
+                    train_accuracy.update_state(y, predictions)
+                    return loss
+
+                per_replica_losses = strategy.run(
+                    step_fn, args=(next(iterator), ))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
+
         elif args.mode == "mix_pre_fp16_v1":
             print("you implement mix_precision_v1")
             optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
@@ -349,7 +415,7 @@ with strategy.scope():
                     all_reduce_fp32_grads = optimizer.get_unscaled_gradients(
                         all_reduce_fp32_grads)
                     optimizer.apply_gradients(
-                        zip(all_reduce_grads, model.trainable_variables), all_reduce_sum_gradients=False)
+                        zip(all_reduce_fp32_grads, model.trainable_variables), experimental_aggregate_gradients=False)
                     train_accuracy.update_state(y, predictions)
                     return loss
 
@@ -357,8 +423,8 @@ with strategy.scope():
                     step_fn, args=(next(iterator), ))
                 return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses, axis=None)
 
-        elif args.mode == "mix_per_pack_NCCL" & args.communication_method == "Pack_size_NCCL":
-            print("you implement mix_precision and pack_NCLL")
+        elif args.mode == "mix_pre_fp16_v1" & args.communication_method == "Pack_size_NCCL":
+            print("you implement mix_precision v1 and pack_NCLL")
             optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
             optimizer = mixed_precision.LossScaleOptimizer(optimizer)
 
@@ -391,7 +457,7 @@ with strategy.scope():
                         all_reduce_fp32_grads)
 
                     optimizer.apply_gradients(
-                        zip(all_reduce_fp32_grads, model.trainable_variables), all_reduce_sum_gradients=False)
+                        zip(all_reduce_fp32_grads, model.trainable_variables), experimental_aggregate_gradients=False)
                     train_accuracy.update_state(y, predictions)
                     return loss
 

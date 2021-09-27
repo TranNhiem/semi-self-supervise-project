@@ -19,7 +19,7 @@ input_shape = (32, 32, 3)
 # # (NxD) #--> OUTPUT( [Q, K][Conetent information, positional])
 # latten_array = latten_dim * projection_dim
 
-# NUM_TRANSFORM_HEAD = 8  # --> Each Attention Module
+# NUM_TRANSFORM_HEAD = 8  # -->  self Attention head Module for single -> Block
 # # Encoder -- Decoder are # --> Increasing block create deeper Transformer model
 # NUM_TRANSFORM_BLOCK = 4
 

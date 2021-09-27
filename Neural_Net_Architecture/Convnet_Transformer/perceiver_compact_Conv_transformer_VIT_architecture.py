@@ -167,7 +167,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
 '''Patches Position Encoding '''
 ####################################################################################
 # 1 tf.keras.layer.embedding Position Encoding
-# LINEAR transform into Vector
+# LINEAR transform into Vector (Learnable Position encoding)
 
 # 2 Learnable and Not Learnable Fourier position Encoding
 # Multi Freq transforms (Perciever-Perceiver IO)
@@ -440,18 +440,21 @@ def create_classification_ffn(units_neuron, dropout_rate):
 ####################################################################################
 
 # 1 Conventional Self-Attention Module
+## Attention Consideration the lattent_dim and ffn_units last later(Same or Differen??)
 
 def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
                                  num_transformer_block, ffn_units, dropout):
     '''
     Args:
-        take lattent_dim as dimension inputs,
-        num_multi_head: number multi-head attention for split inputs and feed into
-        num_transformer_block: stack attention module multiple time
-        ffn_units: number layers, number_units neuron
-        dropout: dropout rate at the end of FFN- model
+        Lattent_dim: Latten Dimension is output from "Cross attention module"
+        num_multi_heads: number multi-head attention for handle multiple part inputs --> Concatenate at the end
+        num_transformer_block:  Stack multi-attention heads module multiple time on top each other 
+        ffn_units: MLP model procesing output from attention module (list Units for multi layer - single number for 1 layer)
+
+        dropout: dropout rate neuron unit of MLP model
+    
     return
-        Attention Encoder model
+        Attention Encoder model -> output of self-attention model (Size output == Size Cross Attention Input)
 
     '''
 
@@ -478,17 +481,21 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
 
     # create stack block model
     model = tf.keras.Model(inputs=inputs, outputs=x0)
+    
     return model
 
 # 2 Cross-Attention Module
-
+## also the question th
 def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dropout):
     '''
     Args:
         latten_dim: Reduce dimension you expected to
-        data_dim: unroll the image num_patchets * projection-dim
-        ffn_units: layers len(ffn_units), nurons= value of element inside
-        dropout: percentages dropout the last layer FFN
+        data_dim: Length unroll the image (num_patchets) 1xD sequence << (Original paper Using Width* High)
+        ffn_units: MLP model layers len(ffn_units), # neuron= value of element inside single integer 1 layer
+        dropout: percentages neuron dropout in the last MLP layer
+
+    Return 
+        the output is metrix (M*N) N is the latten Dimension M is data_dim input Dimension
     '''
 
     # Cross input between Low dimention with high dimention --> low dimention {Language translation}

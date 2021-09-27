@@ -1,67 +1,44 @@
+'''
+Three Seprate Architecture of Conv-Transformer
+1. Conv- Self-Attention ViT architecture 
+2. Conv- Cross- Attention Architecture
+3. CIT -- Cross-Covariance Attention (XCA) (Basicly Conv1 architecture)
+https://arxiv.org/abs/2106.09681
+
+### General Architecture Building Steps
+1/--> Unroll image to small patches 
+    + Patches unroll image 
+    + Using Conv unroll image
+
+2/ --> Position Embeddeding for attention mechanism --> 
+    + (Conv-ViT -- Position embedding seem not effect too much)
+    + Building Sinoudsoid position embedding 
+    + linear position embedding 
+    + other techniques for position embedding 
+
+3/ --> Attention (mechanism)(cross attention -- self attention layer)
+    
+    + Model Depth ()
+    + Model Width ()
+    + Depth and width with scaling factors 
+
+4/ --> Feature Embedding ouput --> Maxpooling -- Encoding flattent 
+
+'''
+
 
 import tensorflow as tf
 import numpy as np
-from tensorflow.python.autograph.operators.py_builtins import len_
-from tensorflow.python.keras.engine.base_layer import InputSpec
 import matplotlib.pyplot as plt
-
-
-#####################################################################################
-'''Create Feed Forward Network'''
-######################################################################################
-# Feed forward network contain in Attention all you need 2 linear and 1 ReLu in middel
-
-## Feed forwared Network for Transformer
-def create_ffn(units_neuron, dropout_rate):
-    '''
-    args: Layers_number_neuron  == units_neuron
-        example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
-    dropout rate--> adding 1 dropout percentages layer Last ffn model
-
-    return  FFN model in keras Sequential model
-    '''
-    ffn_layers = []
-    for units in units_neuron[:-1]:
-        ffn_layers.append(tf.keras.layers.Dense(
-            units=units, activation=tf.nn.gelu))
-
-    ffn_layers.append(tf.keras.layers.Dense(units=units_neuron[-1]))
-    ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
-    ffn = tf.keras.Sequential(ffn_layers)
-    return ffn
-
-
-def create_classification_ffn(units_neuron, dropout_rate):
-    '''
-    args: Layers_number_neuron  == units_neuron
-        example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
-    dropout rate--> adding 1 dropout percentages layer Last ffn model
-
-    return  FFN model in keras Sequential model
-    '''
-    ffn_layers = []
-    for units in units_neuron[:-1]:
-        ffn_layers.append(tf.keras.layers.Dense(
-            units=units, activation=tf.nn.gelu))
-
-    ffn_layers.append(tf.keras.layers.Dense(
-        units=units_neuron[-1], activation='softmax'))
-    # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
-    ffn = tf.keras.Sequential(ffn_layers)
-
-    return ffn
-
 
 ####################################################################################
 '''Extract Patches Unroll the Image'''
 ####################################################################################
 
 # Patches Extract
-
-
 class patches(tf.keras.layers.Layer):
     '''
-    args: Patch_size the size of crop you expect to Unroll image into sequences
+    args: Patch_size the size of crop you expect to Unroll image into sequences (size * size)
 
     return the total number patches
     '''
@@ -84,32 +61,6 @@ class patches(tf.keras.layers.Layer):
         # print(patches.shape)
         return patches
 
-# Display function show the image patches Extraction
-
-def display_pathches(image, IMG_SIZE, patch_size):
-    plt.figure(figsize=(4, 4))
-    plt.imshow(image)
-    plt.axis("off")
-
-    # Resize image and Convert to Tensor
-    image_resize = tf.image.resize(
-        tf.convert_to_tensor([image]), size=(IMG_SIZE, IMG_SIZE))
-    # Unroll image to many patches
-    patches_unroll = patches(patch_size, )(image_resize)
-    # Information of Unroll IMAGE Corresponding with Patch
-    print(f'IMG_SIZE: {IMG_SIZE} x {IMG_SIZE}')
-    print(f'Implement Patch_size: {patch_size} x {patch_size}')
-    print(f'Patches per image: {patches_unroll.shape[1]}')
-    print(f'Elements per Patch: {patches_unroll.shape[-1]}')
-
-    # number of rows and columns
-    n = int(np.sqrt(patches.shape[1]))
-    plt.figure(figsize=(4, 4))
-    for i, patch in enumerate(patches_unroll[0]):
-        ax = plt.subplot(n, n, i+1)
-        patch_img = tf.reshape(patch, (patch_size, patch_size, 3))
-        plt.imshow(patch_img.numpy().astype("uint8"))
-        plt.axis("off")
 # Custom layer ConvNet unroll patches
 
 class conv_unroll_patches(tf.keras.layers.Layer):
@@ -161,12 +112,60 @@ class conv_unroll_patches(tf.keras.layers.Layer):
              [2], tf.shape(outputs)[-1]),
         )
         flatten_sequences = tf.cast(flatten_sequences, dtype=tf.float32)
+        
         return flatten_sequences
+
+# Display function show the image patches Extraction
+
+def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
+    '''
+    Args: 
+        image: input image
+        IMG_SIZE: 
+        Patch_size: 
+        Unroll_method: 
+    Return 
+        Sequence of patches 
+    '''
+    plt.figure(figsize=(4, 4))
+    plt.imshow(image)
+    plt.axis("off")
+
+    # Resize image and Convert to Tensor
+    image_resize = tf.image.resize(
+        tf.convert_to_tensor([image]), size=(IMG_SIZE, IMG_SIZE))
+    if unroll_method =="tf_patches":
+        # Unroll image to many patches
+
+        patches_unroll = patches(patch_size, )(image_resize)
+        # Information of Unroll IMAGE Corresponding with Patch
+        print(f'IMG_SIZE: {IMG_SIZE} x {IMG_SIZE}')
+        print(f'Implement Patch_size: {patch_size} x {patch_size}')
+        print(f'Patches per image: {patches_unroll.shape[1]}')
+        print(f'Elements per Patch: {patches_unroll.shape[-1]}')
+        # number of rows and columns
+        n = int(np.sqrt(patches.shape[1]))
+    elif unroll_method=="convolution": 
+        '''
+        Develope Visualization of Patch Unroll Here
+
+        '''
+        pass
+
+    else: 
+        raise ValueError("Unroll method not in current support methods")
+
+    plt.figure(figsize=(4, 4))
+    for i, patch in enumerate(patches_unroll[0]):
+        ax = plt.subplot(n, n, i+1)
+        patch_img = tf.reshape(patch, (patch_size, patch_size, 3))
+        plt.imshow(patch_img.numpy().astype("uint8"))
+        plt.axis("off")
 
 
 ####################################################################################
 '''Patches Position Encoding '''
-
+####################################################################################
 # 1 tf.keras.layer.embedding Position Encoding
 # LINEAR transform into Vector
 
@@ -177,11 +176,9 @@ class conv_unroll_patches(tf.keras.layers.Layer):
 
 # 4. Dinstangle Position Encoding (DeBERTA paper)
 
-####################################################################################
 # Encoding Patches [Content and Position]
 # 1 LINEAR position encoding tf.keras.layers.Embeddeding
 # This position encoding is not learnable
-
 
 class patch_content_position_encoding(tf.keras.layers.Layer):
     '''
@@ -210,6 +207,7 @@ class patch_content_position_encoding(tf.keras.layers.Layer):
         return encoding
 
 # CUstom layer LInear postiong Encoded
+
 class conv_content_position_encoding_cls(tf.keras.layers.Layer):
     '''
     Building layer to return Position Encoding
@@ -280,6 +278,7 @@ def conv_content_position_encoding(image_size, num_conv_layer, spatial2projectio
 
     return position_encoding_out
 
+## This Current implementation For Unroll and position Encoding
 class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
     '''
     Args, 
@@ -363,6 +362,7 @@ class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
 
         return position_encoding_out, sequences_flatten_out
 
+
     def get_config(self):
 
         configs_item = {
@@ -382,18 +382,64 @@ class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
         # return config
 
 
-####################################################################################
-'''-----Building Transformer Module----'''
-# 1. Convention attention module for encoder --- Decoder
+#####################################################################################
+'''Create Feed Forward Network'''
+######################################################################################
+# Feed forward network contain in Attention all you need 2 linear and 1 ReLu in middel
+# Feed forwared Network for Transformer
 
-# 2. Cross Attention Module (Perceiver/PerceiverIO)
+
+def create_ffn(units_neuron, dropout_rate):
+    '''
+    args: Layers_number_neuron  == units_neuron
+        example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
+    dropout rate--> adding 1 dropout percentages layer Last ffn model
+    return  FFN model in keras Sequential model
+    '''
+    ffn_layers = []
+    for units in units_neuron[:-1]:
+        ffn_layers.append(tf.keras.layers.Dense(
+            units=units, activation=tf.nn.gelu))
+
+    ffn_layers.append(tf.keras.layers.Dense(units=units_neuron[-1]))
+    ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
+    ffn = tf.keras.Sequential(ffn_layers)
+    return ffn
+
+
+def create_classification_ffn(units_neuron, dropout_rate):
+    '''
+    args: Layers_number_neuron  == units_neuron
+        example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
+    dropout rate--> adding 1 dropout percentages layer Last ffn model
+
+    return  FFN model in keras Sequential model
+    '''
+    ffn_layers = []
+    for units in units_neuron[:-1]:
+        ffn_layers.append(tf.keras.layers.Dense(
+            units=units, activation=tf.nn.gelu))
+
+    ffn_layers.append(tf.keras.layers.Dense(
+        units=units_neuron[-1], activation='softmax'))
+    # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
+    ffn = tf.keras.Sequential(ffn_layers)
+
+    return ffn
+
+
+####################################################################################
+'''-----Building Transformer Attention Type Module----'''
+# 1. Convention Self-attention module for encoder --- Decoder
+
+# 2. Cross-Attention Module (Perceiver/PerceiverIO)
 
 # 3. Axial Attention Module (Axial DeepLAB paper)
 
 # 4. Distangle Attention Module (DeBERTA paper)
 ####################################################################################
 
-# 1 Convetion Attention Module
+# 1 Conventional Self-Attention Module
 
 def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
                                  num_transformer_block, ffn_units, dropout):
@@ -434,7 +480,7 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     model = tf.keras.Model(inputs=inputs, outputs=x0)
     return model
 
-# 2 Cross Attention Module
+# 2 Cross-Attention Module
 
 def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dropout):
     '''
@@ -489,7 +535,11 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
 
 
 ####################################################################################
-'''Perceviver Architecture'''
+'''Building Conv-Transformer Architecture
+1. Conv-Cross-Attention(Perceviver Architecture)
+2. Conv-Self attention (ViT)
+
+'''
 ####################################################################################
 # 1. The cross-attention epxect a (lattent_dim, projection_dim) --> latten array
 # 2. data array (data_dim, proction_dim) --> data arrray
@@ -750,7 +800,6 @@ class perceiver_architecture_V2(tf.keras.Model):
 
         return representation
 
-
 class convnet_perceiver_architecture(tf.keras.Model):
 
     def __init__(self,
@@ -777,6 +826,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
         self.projection_dim = projection_dim
         self.num_multi_heads = num_multi_heads
         self.num_transformer_block = num_transformer_block
+        
         # Configure output
         self.ffn_units = ffn_units
         self.dropout = dropout
@@ -869,93 +919,6 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
 
 ####################################################################################
-'''2. Vision Transformer Architecture
-
-        1. Patches Unroll can also re-use from Previous Perciever architecture
-        2. Emebdding patches should incldue the
-        3. Some optimal configure for building MLP 
-        4. Building Projection Dimentions
-
-    3. GOAL Further Design Axial Attention for ViT model 
-'''
-####################################################################################
-
-# Using keras API
-
-
-class self_attention_VIT(tf.keras.Model):
-    '''Args
-    patches_nums  will be equal to the number data-dimentions
-    '''
-
-    def __init__(self, patch_size, num_patches, projection_dim, transformer_layer,
-                 number_attention_head, transformer_FPN_units, fft_units, dropout, num_classes, include_top=False, flatten_mode="flatten"):
-        super(self_attention_VIT, self).__init__()
-        self.patch_size = patch_size
-        self.num_patches = num_patches
-        self.projection_dim = projection_dim
-        self.transformer_layer = transformer_layer
-        self.number_attention_head = number_attention_head
-        self.transformer_FPN_units = transformer_FPN_units
-        self.fft_units = fft_units
-        self.include_top = include_top
-        self.dropout = dropout
-        self.flatten_mode = flatten_mode
-        self.num_classes = num_classes
-
-    def build(self, input_shape):
-        self.patches_unroll = patches(self.patch_size)
-        self.patches_encoded = patch_content_position_encoding(
-            self.num_patches, self.projection_dim)
-        # self.global_average_pooling= tf.keras.layers.GlobalAveragePooling1D()
-        # self.fallen_layer= tf.keras.layers.Flatten()
-        super(self_attention_VIT, self).build(input_shape)
-
-    def call(self, input):
-        patches_unroll = self.patches_unroll(input)
-        patches_encoded = self.patches_encoded(patches_unroll)
-
-        for _ in range(self.transformer_layer):
-            # Applying Layer Normalization
-            x = tf.keras.layers.LayerNormalization(
-                epsilon=1e-6)(patches_encoded)
-            # Applying the multi-head Attention Layers
-            x = tf.keras.layers.MultiHeadAttention(
-                num_heads=self.number_attention_head, key_dim=self.projection_dim, dropout=0.1)(x, x)
-            # Adding the skip connection
-            x = tf.keras.layers.Add()([x, patches_encoded])
-            # Normalization again
-            x1 = tf.keras.layers.LayerNormalization(epsilon=1e-4)(x1)
-            # passing Poitwise feed forward network
-            x1 = create_ffn(units_neuron=self.transformer_FPN_units,
-                            dropout_rate=self.dropout)(x1)
-            patches_encoded = tf.keras.layers.Add()([x1, x])
-
-        # Create [Batch_size, projection_dim] Tensor
-        represenation = tf.keras.layers.LayerNormalization(
-            epsilon=1e-6)(patches_encoded)
-        if self.flatten_mode == "flatten":
-            represenation = tf.keras.layers.Flatten()(represenation)
-        elif self.flatten_mode == "avpool1D":
-            represenation = tf.keras.layers.GlobalAveragePooling1D()(represenation)
-        # Further go through FFN processing
-        feature = create_ffn(units_neuron=self.fft_units,
-                             dropout_rate=self.dropout)
-        if self.include_top:
-            feature = tf.keras.layers.Dense(self.num_classes)(feature)
-        return feature
-
-
-####################################################################################
-'''2. Vision Transformer Compact and Lite Version Implementation Architecture'''
-####################################################################################
-
-
-class compact_lite_vit(tf.keras.Model):
-    pass
-
-
-####################################################################################
 '''3.Compact Convolution Transformer Architecture'''
 ####################################################################################
 # Transformer not well inductive_bias-- let Conv helps
@@ -975,7 +938,6 @@ class compact_lite_vit(tf.keras.Model):
 
 # Patches -- tokenized the images -- Using Conv instead patches VIT
 # The same concept Unroll the Image with Conv + Flatten layer at the end
-
 
 class ccttokenized(tf.keras.layers.Layer):
     #num_output_channels=[64, 128],
@@ -1057,7 +1019,8 @@ class ccttokenized(tf.keras.layers.Layer):
     def axial_position_embedding(self, image_size):
         raise NotImplementedError
 
-# Stochastic Depth-- Similar Dropout Concpet
+# Stochastic Depth
+# -- Similar Dropout Concept (Instead of dropout Neurons --> This dropout layers)
 
 
 class stochasticDepth(tf.keras.layers.Layer):
@@ -1099,6 +1062,7 @@ def mlp(x, hidden_units, dropout_rate):
     return x
 
 # API to build the model
+
 
 class conv_transform(tf.keras.Model):
     '''args
@@ -1203,8 +1167,8 @@ class conv_transform(tf.keras.Model):
 
 def conv_transform_v1(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
                       transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
+    
     input = tf.keras.layers.Input(input_shape)
-
     # Conv patches unroll
     patches_sequence = conv_unroll_patches_position_encoded(
         num_conv_layers, spatial2project_dim)
@@ -1258,4 +1222,5 @@ def conv_transform_v1(input_shape, num_class, image_size, num_conv_layers, spati
         representation_out = weighted_represenation
 
     model = tf.keras.Model(inputs=input, outputs=representation_out)
+    
     return model

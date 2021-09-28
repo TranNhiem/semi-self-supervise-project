@@ -161,7 +161,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
 
     plt.figure(figsize=(4, 4))
     for i, patch in enumerate(patches_unroll[0]):
-        ax = plt.subplot(n, n, i+1)
+        axis = plt.subplot(n, n, i+1)
         patch_img = tf.reshape(patch, (patch_size, patch_size, 3))
         plt.imshow(patch_img.numpy().astype("uint8"))
         plt.axis("off")
@@ -621,7 +621,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
                  # Conv_unroll paches_image
                  IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2projection_dim,
                  # Cross attention Module
-                  lattent_dim, projection_dim,
+                 lattent_dim, projection_dim,
                  # For the Latten transformer and Model depth
                  num_multi_heads, num_transformer_block, num_model_layer,
                  # For model MLP (Pointwise Linear feed forward model)
@@ -662,6 +662,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
         # Configure for Stochastic Depth
         self.stochastic_depth_rate = stochastic_depth_rate
+        self.stochastic_depth = stochastic_depth
         self.dpr = None
         if stochastic_depth:
             # calculate Stochastic propability
@@ -678,6 +679,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
         # create patches from Conv
         self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layer, self.spatial2projection_dim)
+
 
         self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
             self.IMG_SIZE)
@@ -709,12 +711,15 @@ class convnet_perceiver_architecture(tf.keras.Model):
         # inputs, _ = inputs
         # create patches
         num_patches = self.num_patches(inputs)
-
+        
+        if self.conv_position_embedding: 
+            
         # embedding patches position content information learnable
         linear_position_patches = self.patches_position_encoding
         patches_postions_encoded = tf.math.add(
             num_patches, linear_position_patches)
-        print("this is data output shape", patches_postions_encoded.shape)
+
+        print("Debug Covnet Unroll Patches Output", patches_postions_encoded.shape)
 
         # passing input to cross attention
         cross_attention_input = {"latent_array": tf.expand_dims(self.latent_array, 0),
@@ -734,10 +739,10 @@ class convnet_perceiver_architecture(tf.keras.Model):
         if self.pooling_mode == "1D":
             self.global_average_pooling = tf.keras.layers.GlobalAveragePooling1D()
             representation = self.global_average_pooling(latent_array)
-
-        elif self.pooling_mode == "2D":
-            self.global_average_pooling = tf.keras.layers.GlobalAveragePooling2D()
-            representation = self.global_average_pooling(latent_array)
+        # has to modify the output to use in 2D pooling
+        # elif self.pooling_mode == "2D":
+        #     self.global_average_pooling = tf.keras.layers.GlobalAveragePooling2D()
+        #     representation = self.global_average_pooling(latent_array)
 
         elif self.pooling_mode == "sequence_pooling":
             representation = tf.keras.layers.LayerNormalization(

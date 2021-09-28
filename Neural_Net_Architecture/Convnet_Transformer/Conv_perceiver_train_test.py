@@ -6,7 +6,7 @@ from perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceive
 
 import tensorflow as tf
 import tensorflow_addons as tfa
-from tensorflow.python.keras.backend import learning_phase
+from tensorflow.python.keras.backend import dropout, learning_phase
 from tensorflow.keras import optimizers
 
 
@@ -38,7 +38,7 @@ conv_position_embedding = True
 latten_dim = 128  # size of latten array --> (N)
 projection_dim = 256
 dropout = 0.2
-
+stochastic_depth_rate = 0.1
 # Learnable array
 # (NxD) #--> OUTPUT( [Q, K][Conetent information, positional])
 # latten_array = latten_dim * projection_dim
@@ -74,10 +74,12 @@ with strategy.scope():
         #train_ds, test_ds = CIFAR100(BATCH_SIZE, IMG_SIZE)
 
         # Create model Architecutre
+        # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
         conv_perceiver_model = convnet_perceiver_architecture(IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
                                                               latten_dim, projection_dim, num_multi_heads,
                                                               NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout,
-                                                              classification_head, include_top=True, pooling_mode="2D")
+                                                              classification_head, include_top=True, pooling_mode="1D",
+                                                              stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))
         conv_perceiver_model.summary()
@@ -86,7 +88,7 @@ with strategy.scope():
         x = tf.random.normal((BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3))
         h = conv_perceiver_model(x, training=False)
         print("Succeed Initialize online encoder")
-        print(f"your encoder OUTPUT: {h.shape}")
+        print(f"Conv_Perciever encoder OUTPUT: {h.shape}")
 
         num_params_f = tf.reduce_sum(
             [tf.reduce_prod(var.shape) for var in conv_perceiver_model.trainable_variables])

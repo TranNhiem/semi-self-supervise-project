@@ -35,8 +35,7 @@ in SimCLR & BYOL with warmup steps =10
 # Reference https://github.com/google-research/simclr/blob/dec99a81a4ceccb0a5a893afecbc2ee18f1d76c3/tf2/model.py
 
 
-#import tensorflow as tf
-
+import sys
 from utils.args import parse_args
 import numpy as np
 import math
@@ -44,6 +43,10 @@ import tensorflow.compat.v2 as tf
 import tensorflow_addons as tfa
 import gctf # Gradient Centralization
 from lars_optimizer import LARS_optimzer
+import tensorflow as tf
+sys.path.append("./")
+
+
 args = parse_args()
 
 # this helper function determine steps per epoch

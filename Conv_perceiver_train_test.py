@@ -1,16 +1,16 @@
-import wandb
-from utils.args import parse_args
-from Data_utils.datasets import SEED
-from Data_utils.datasets import CIFAR100_dataset
-from tensorflow.keras import optimizers
-from tensorflow.python.keras.backend import dropout, learning_phase
-import tensorflow_addons as tfa
-import tensorflow as tf
-from perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceiver_architecture
-import argparse
-from tensorflow.keras.optimizers import schedules
-from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
 from wandb.keras import WandbCallback
+from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
+from tensorflow.keras.optimizers import schedules
+import argparse
+from perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceiver_architecture
+import tensorflow as tf
+import tensorflow_addons as tfa
+from tensorflow.python.keras.backend import dropout, learning_phase
+from tensorflow.keras import optimizers
+from Data_utils.datasets import CIFAR100_dataset
+from Data_utils.datasets import SEED
+from utils.args import parse_args
+import wandb
 import sys
 sys.path.append(
     "/data/rick109582607/Desktop/TinyML/semi_self_supervised_project/")

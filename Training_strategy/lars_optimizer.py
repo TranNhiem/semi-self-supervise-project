@@ -10,10 +10,10 @@ Implementation Reference from SimCLRV2
 # https://github.com/google-research/simclr/blob/dec99a81a4ceccb0a5a893afecbc2ee18f1d76c3/tf2/lars_optimizer.py
 
 '''
-
+import sys
 import re
-import tensorflow.compat.v2 as tf
-
+#import tensorflow.compat.v2 as tf
+import tensorflow as tf
 # scaling of learning rate
 EETA_DEFAULT = 0.001
 

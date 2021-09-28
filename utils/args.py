@@ -13,13 +13,13 @@ def parse_args():
     parser.add_argument('-- exp_name', default='test', type=str,
                         help='experiment_name')
 
-    parser.add_argument('--train_epochs', type=int, default=1000,
+    parser.add_argument('--train_epochs', type=int, default=200,
                         help='Number of iteration')
 
     parser.add_argument('--train_steps', type=int, default=None,
                         help='Number base total steps iterate each epochs')
 
-    parser.add_argument('--warmup_epochs', type=int, default=100,
+    parser.add_argument('--warmup_epochs', type=int, default=20,
                         help='Warmup the learning base period -- this Larger --> Warmup more slower')
 
     parser.add_argument('--dataset', metavar='DATA', default='tiny-imagenet',
@@ -39,7 +39,7 @@ def parse_args():
 
     # Optimizer Configs:
     # In optimizer we will have three Option ('Original Configure', 'Weight Decay', 'Gradient Centralization')
-    parser.add_argument('--optimizer', type=str, default="Adam", help="Optimization for update the Gradient",
+    parser.add_argument('--optimizer', type=str, default="AdamW", help="Optimization for update the Gradient",
                         choices=['Adam', 'SGD', 'LARS', 'AdamW', 'SGDW', 'LARSW',
                                  'AdamGC', 'SGDGC', 'LARSGC', 'AdamW_GC', 'SGDW_GC', 'LARSW_GC'])
     parser.add_argument('--momentum', type=float, default=0.9,
@@ -47,5 +47,7 @@ def parse_args():
 
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help="weight_decay to penalize the update gradient")
+
+    # Configure fro Conv_Trasnformer Architecture
 
     return parser.parse_args()

@@ -1,25 +1,34 @@
-
-
-from tensorflow.keras.optimizers import schedules
-import argparse
-from perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceiver_architecture
-
-import tensorflow as tf
-import tensorflow_addons as tfa
-from tensorflow.python.keras.backend import dropout, learning_phase
+import wandb
+from utils.args import parse_args
+from Data_utils.datasets import SEED
+from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
+from tensorflow.python.keras.backend import dropout, learning_phase
+import tensorflow_addons as tfa
+import tensorflow as tf
+from perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceiver_architecture
+import argparse
+from tensorflow.keras.optimizers import schedules
+from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
+from wandb.keras import WandbCallback
+import sys
+sys.path.append(
+    "/data/rick109582607/Desktop/TinyML/semi_self_supervised_project/")
 
+
+wandb.login()
 
 # Setting GPUs
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:5], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
     except RuntimeError as e:
         print(e)
+
 strategy = tf.distribute.MirroredStrategy()
 
 
@@ -67,11 +76,13 @@ with strategy.scope():
 
     def main(args):
 
-        BATCH_SIZE = args.batch_size
-        EPOCHS = args.num_epochs
+        BATCH_SIZE = args.train_batch_size
+        EPOCHS = args.train_epochs
 
         # Prepare data training
-        #train_ds, test_ds = CIFAR100(BATCH_SIZE, IMG_SIZE)
+        data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
+        num_images = data.num_train_images
+        train_ds, test_ds = data.supervised_train_ds_test_ds()
 
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
@@ -94,65 +105,65 @@ with strategy.scope():
             [tf.reduce_prod(var.shape) for var in conv_perceiver_model.trainable_variables])
         print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
-        '''
-        # Model Hyperparameter Defined
-        # 1. Define init
-        init_lr = 1e-3
-        weight_decay = 1e-6
-        # 2. Schedule init
-        step = tf.Variable(0, trainable=False)
-        schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-            [10000, 15000], [1e-0, 1e-1, 1e-2])
-        lr_schedule = 1e-3*schedule(step)
-        def weight_decay_sche(): return 1e-4 * schedule(step)
+        # Configure Logs recording during training
+        '''Training Configure'''
+        configs = {
+            "Model_Arch": "Conv_Perceiver_arch",
+            "DataAugmentation_types": "None for testing",
+            "Dataset": "Cifar100",
+            "IMG_SIZE": IMG_SIZE,
+            "Epochs": EPOCHS,
+            "Batch_size": BATCH_SIZE,
+            "Learning_rate": "1e-3*Batch_size/512",
+            "Optimizer": "AdamW",
+            "SEED": SEED,
+            "Loss type": "Cross_entropy_loss",
+        }
 
-        # 3. Schedule CosineDecay Define init
-        steps_lr = EPOCHS*(50000/BATCH_SIZE)  # Len images/batch_size
-        lr_decay_fn = tf.keras.experimental.CosineDecay(
-            initial_learning_rate=0.003, decay_steps=steps_lr)
+        wandb.init(project="heuristic_attention_representation_learning",
+                   sync_tensorboard=True, config=configs)
+
+        # Model Hyperparameter Defined Primary
+        # 1. Define init
+        # base_lr = 1e-3
+        # weight_decay = 1e-6
+        # # 2. Schedule init
+        # step = tf.Variable(0, trainable=False)
+        # schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+        #     [10000, 15000], [1e-0, 1e-1, 1e-2])
+        # lr_schedule = 1e-3*schedule(step)
+        # def weight_decay_sche(): return 1e-4 * schedule(step)
 
         # optimizer = tfa.optimizers.LAMB(
         #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
 
-        optimizer = tfa.optimizers.SGDW(
-            learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay_sche)
+        # optimizer = tfa.optimizers.SGDW(
+        #     learning_rate=lr_rate, momentum=0.9, weight_decay=weight_decay)
 
         # optimizer = tfa.optimizers.AdamW(
         #     learning_rate=init_lr, weight_decay=weight_decay)
 
-        # model compile
-        conv_perceiver_model.compile(optimizer=optimizer,
-                                loss=tf.keras.losses.CategoricalCrossentropy(),
-                                metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
-                                         tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
+        # Custom Define Hyperparameter
 
+        # 3. Schedule CosineDecay warmup
+        base_lr = 0.3
+        lr_rate = WarmUpAndCosineDecay(base_lr, num_images)
+        optimizers = get_optimizer(lr_rate)
+        AdamW = optimizers.optimizer_weight_decay
+
+        # model compile
+        conv_perceiver_model.compile(optimizer=AdamW,
+                                     loss=tf.keras.losses.CategoricalCrossentropy(),
+                                     metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
+                                              tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
 
         # MODEL TRAINING
 
         conv_perceiver_model.fit(train_ds, epochs=EPOCHS,
-                            validation_data=test_ds,)  # callbacks=callbacks_list,
-
-        
-        '''
+                                 validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
 
     if __name__ == '__main__':
 
-        parser = argparse.ArgumentParser()
-
-        # for training
-        parser.add_argument('--encoder', type=str, required=False, default="perceiver_4", choices=[
-                            'perceiver_4', 'perceiver_8', 'perceiver_12', 'perceiver_16'], help='Encoder architecture')
-        parser.add_argument('--num_epochs', type=int,
-                            default=500, help='Number of epochs')
-        parser.add_argument('--batch_size', type=int,
-                            default=200, help='Batch size for pretraining')
-
-        # for callbackSS
-        parser.add_argument('--weights_path', type=str,
-                            default='./transformer_weights/Conv_perceiver_transformer_teacher_weight_SGDW.h5', help='distill_saving_weight_path')
-        parser.add_argument('--logs_path', type=str,
-                            default='./transformer_logs/Conv_perceiver_transformer_teacher_SGDW', help='distill_saving_weight_path')
-
-        args = parser.parse_args()
+        args = parse_args()
 
         main(args)

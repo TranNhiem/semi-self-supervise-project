@@ -680,7 +680,6 @@ class convnet_perceiver_architecture(tf.keras.Model):
         self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layer, self.spatial2projection_dim)
 
-
         self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
             self.IMG_SIZE)
 
@@ -711,19 +710,20 @@ class convnet_perceiver_architecture(tf.keras.Model):
         # inputs, _ = inputs
         # create patches
         num_patches = self.num_patches(inputs)
-        
-        if self.conv_position_embedding: 
-            
-        # embedding patches position content information learnable
-        linear_position_patches = self.patches_position_encoding
-        patches_postions_encoded = tf.math.add(
-            num_patches, linear_position_patches)
 
-        print("Debug Covnet Unroll Patches Output", patches_postions_encoded.shape)
+        if self.conv_position_embedding:
+
+            # embedding patches position content information learnable
+            linear_position_patches = self.patches_position_encoding
+            num_patches = tf.math.add(
+                num_patches, linear_position_patches)
+
+        print("Debug Covnet Unroll Patches Output",
+              num_patches.shape)
 
         # passing input to cross attention
         cross_attention_input = {"latent_array": tf.expand_dims(self.latent_array, 0),
-                                 "data_array": patches_postions_encoded,
+                                 "data_array": num_patches,
                                  }
         # Apply cross attention --> latent transform --> Stack multiple build deeper model
         for _ in range(self.num_model_layer):

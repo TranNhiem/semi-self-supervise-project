@@ -95,7 +95,6 @@ with strategy.scope():
         print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
         '''
-
         # Model Hyperparameter Defined
         # 1. Define init
         init_lr = 1e-3

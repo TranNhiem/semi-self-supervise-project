@@ -619,9 +619,9 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
     def __init__(self,
                  # Conv_unroll paches_image
-                 image_size, num_conv_layers, conv_position_embedding, spatial2projection_dim,
+                 IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2projection_dim,
                  # Cross attention Module
-                 data_dim, lattent_dim, projection_dim,
+                  lattent_dim, projection_dim,
                  # For the Latten transformer and Model depth
                  num_multi_heads, num_transformer_block, num_model_layer,
                  # For model MLP (Pointwise Linear feed forward model)
@@ -633,13 +633,15 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
                  ):
 
-        self.image_size = image_size
+        super(convnet_perceiver_architecture, self).__init__(
+            name="Conv_Perceiver_Arch")
+
+        self.IMG_SIZE = IMG_SIZE
         self.conv_position_embedding = conv_position_embedding
         self.num_conv_layer = num_conv_layers
         self.spatial2projection_dim = spatial2projection_dim
 
         # Configure data
-        self.data_dim_ = data_dim  # num_patches
         self.lattent_dim = lattent_dim
         self.projection_dim = projection_dim
         self.num_multi_heads = num_multi_heads
@@ -653,13 +655,10 @@ class convnet_perceiver_architecture(tf.keras.Model):
         self.include_top = include_top
         self.pooling_mode = pooling_mode
 
-        super(convnet_perceiver_architecture, self).__init__(
-            name="C_Conv_Perceiver_Arch")
-
         # preprocessing for embedding position
-        if self.conv_position_embedding:
-            self.input_img_position_encode = tf.ones(
-                (1, self.image_size, self.image_size, 3))
+        # if self.conv_position_embedding:
+        #     self.input_img_position_encode = tf.ones(
+        #         (1, self.IMG_SIZE, self.IMG_SIZE, 3))
 
         # Configure for Stochastic Depth
         self.stochastic_depth_rate = stochastic_depth_rate
@@ -681,7 +680,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
             self.num_conv_layer, self.spatial2projection_dim)
 
         self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
-            self.image_size)
+            self.IMG_SIZE)
 
         # create tf.image_patches module
         # self.num_patches = patches(self.patch_size)

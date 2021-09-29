@@ -821,6 +821,7 @@ class conv_transform_VIT(tf.keras.Model):
 
         # Configure for Stochastic Depth
         self.stochastic_depth_rate = stochastic_depth_rate
+        self.stochastic_depth = stochastic_depth
         self.dpr = None
         if stochastic_depth:
             # calculate Stochastic propability

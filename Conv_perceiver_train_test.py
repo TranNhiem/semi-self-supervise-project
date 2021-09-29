@@ -17,6 +17,11 @@ import tensorflow as tf
 
 wandb.login()
 
+include_top = True
+if include_top:
+    tf.config.experimental_run_functions_eagerly(True)
+
+
 # Setting GPUs
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
@@ -46,9 +51,9 @@ num_class = 100
 num_conv_layers = 2  # for unroll patches -- Overlap
 spatial2projection_dim = [128, 256]  # This equivalent to # filters
 conv_position_embedding = True
-latten_dim = 128  # size of latten array --> (N)
+latten_dim = 256  # size of latten array --> (N)
 projection_dim = 256
-dropout = 0.2
+dropout_rate = 0.2
 stochastic_depth_rate = 0.1
 # Learnable array
 # (NxD) #--> OUTPUT( [Q, K][Conetent information, positional])
@@ -59,7 +64,7 @@ num_multi_heads = 8  # --> multhi Attention Module to processing inputs
 NUM_TRANSFORMER_BLOCK = 4
 # Corresponding with Depth of self-attention
 # Model depth stack multiple CrossAttention +self-trasnformer_Block
-NUM_MODEL_LAYERS = 4
+NUM_MODEL_LAYERS = 2
 
 # 2 layer MLP Dense with number of Unit= pro_dim
 FFN_layers_units = [projection_dim, projection_dim]
@@ -114,8 +119,8 @@ with strategy.scope():
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
         conv_perceiver_model = convnet_perceiver_architecture(IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
                                                               latten_dim, projection_dim, num_multi_heads,
-                                                              NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout,
-                                                              classification_head, include_top=True, pooling_mode="1D",
+                                                              NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+                                                              classification_head, include_top=include_top, pooling_mode="sequence_pooling",
                                                               stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))
@@ -157,11 +162,11 @@ with strategy.scope():
         # optimizer = tfa.optimizers.LAMB(
         #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
 
-        # optimizer = tfa.optimizers.SGDW(
-        #     learning_rate=lr_rate, momentum=0.9, weight_decay=weight_decay)
+        optimizer = tfa.optimizers.SGDW(
+            learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay)
 
-        optimizer = tfa.optimizers.AdamW(
-            learning_rate=init_lr, weight_decay=weight_decay)
+        # optimizer = tfa.optimizers.AdamW(
+        #     learning_rate=init_lr, weight_decay=weight_decay)
 
         ################################
         # Custom Define Hyperparameter

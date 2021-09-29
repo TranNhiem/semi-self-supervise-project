@@ -834,13 +834,13 @@ class conv_transform_VIT(tf.keras.Model):
             self.num_conv_layers, self.spatial2project_dim)
 
         # embedding patches position content information learnable
-        linear_position_patches = self.num_patches.conv_content_position_encoding(
+        self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
             self.IMG_SIZE)
 
-        self.patches_postions_encoded = tf.math.add(
-            self.num_patches, linear_position_patches)
+        # self.patches_postions_encoded = tf.math.add(
+        #     self.num_patches, linear_position_patches)
 
-        print("this is data output shape", self.patches_postions_encoded.shape)
+        # print("this is data output shape", self.patches_postions_encoded.shape)
 
         # Classification Head Configure
         if self.include_top == True:
@@ -853,12 +853,18 @@ class conv_transform_VIT(tf.keras.Model):
         # Augmentation option --> self-supervised processing outside
         # create patches
         num_patches = self.num_patches(inputs)
-        # embedding patches position content information learnable
-        linear_position_patches = self.patches_postions_encoded
-        patches_postions_encoded = tf.math.add(
-            num_patches, linear_position_patches)
 
-        patches_sequences = {"img_patches_seq": patches_postions_encoded, }
+        if self.embedding_option:
+
+            # embedding patches position content information learnable
+            linear_position_patches = self.patches_position_encoding
+            num_patches = tf.math.add(
+                num_patches, linear_position_patches)
+
+        print("Debug Covnet Unroll Patches Output",
+              num_patches.shape)
+
+        patches_sequences = {"img_patches_seq": num_patches}
 
         # Create transformer_self-Attention
         latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,

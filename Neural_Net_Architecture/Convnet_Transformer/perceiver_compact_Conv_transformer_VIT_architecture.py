@@ -149,7 +149,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
         print(f'Patches per image: {patches_unroll.shape[1]}')
         print(f'Elements per Patch: {patches_unroll.shape[-1]}')
         # number of rows and columns
-        n = int(np.sqrt(patches.shape[1]))
+        n = int(np.sqrt(patches_unroll.shape[1]))
     elif unroll_method == "convolution":
         '''
         Develope Visualization of Patch Unroll Here
@@ -162,7 +162,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
 
     plt.figure(figsize=(4, 4))
     for i, patch in enumerate(patches_unroll[0]):
-        axis = plt.subplot(n, n, i+1)
+        ax = plt.subplot(n, n, i+1)
         patch_img = tf.reshape(patch, (patch_size, patch_size, 3))
         plt.imshow(patch_img.numpy().astype("uint8"))
         plt.axis("off")
@@ -282,7 +282,7 @@ def conv_content_position_encoding(image_size, num_conv_layer, spatial2projectio
     positions = tf.range(start=0, limit=sequences_flatten_out, delta=1)
     position_encoding_out = position_encoding(positions)
     position_encoding_out = tf.cast(
-        position_encoding_out, dtype=tf.float32)
+        position_encoding_out, tf.float32)
 
     return position_encoding_out
 
@@ -368,7 +368,7 @@ class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
         positions = tf.range(start=0, limit=sequences_flatten_out, delta=1)
         position_encoding_out = position_encoding(positions)
         position_encoding_out = tf.cast(
-            position_encoding_out, dtype=tf.float32)
+            position_encoding_out, tf.float32)
 
         return position_encoding_out, sequences_flatten_out
 
@@ -430,7 +430,7 @@ def create_classification_ffn(units_neuron, dropout_rate):
             units=units, activation=tf.nn.gelu))
 
     ffn_layers.append(tf.keras.layers.Dense(
-        units=units_neuron[-1], activation='softmax'))
+        units=units_neuron[-1], ))  # activation='softmax'
     # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
     ffn = tf.keras.Sequential(ffn_layers)
 
@@ -763,13 +763,13 @@ class convnet_perceiver_architecture(tf.keras.Model):
             weighted_representation = tf.matmul(
                 attention_weights, representation, transpose_a=True)
             representation = tf.squeeze(weighted_representation, -2)
+            print("this is output sequence_pool", representation.shape)
 
         else:
             raise Exception("you're pooling mode not available")
 
         if self.include_top == True:
             representation = self.classification_head(representation)
-
         return representation
 
 
@@ -830,6 +830,10 @@ class conv_transform_VIT(tf.keras.Model):
                 0, stochastic_depth_rate, num_transformer_blocks)]
 
     def build(self, input_shape):
+        # create lattent array with init random values
+
+        # initial_input = self.add_weight(shape=input_shape,
+        #                                 initializer="random_normal", trainable=True)
 
         self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layers, self.spatial2project_dim)
@@ -840,6 +844,9 @@ class conv_transform_VIT(tf.keras.Model):
 
         # self.patches_postions_encoded = tf.math.add(
         #     self.num_patches, linear_position_patches)
+        # Create Latten_transformer_Attention
+        self.latent_transformer = latten_transformer_attention(self.data_dim, self.projection_dim, self.num_head_attention,
+                                                               self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         # print("this is data output shape", self.patches_postions_encoded.shape)
 
@@ -865,39 +872,41 @@ class conv_transform_VIT(tf.keras.Model):
         print("Debug Covnet Unroll Patches Output",
               num_patches.shape)
 
-        patches_sequences = {"img_patches_seq": num_patches}
+        # patches_sequences = {"img_patches_seq": num_patches}
 
-        # Create transformer_self-Attention
-        latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
-                                                          self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
+        # # Create transformer_self-Attention
+        # latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
+        #                                                   self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         # Apply cross attention --> latent transform --> Stack multiple build deeper model
         for _ in range(self.num_transformer_blocks):
             # Applying cross attention to INPUT
             # apply latent attention to cross attention OUTPUT
-            self_attention_out = latent_transformer(patches_sequences)
+            self_attention_out = self.latent_transformer(num_patches)
+            num_patches = self_attention_out
             # set the latent array out output to the next block
-            patches_sequences["img_patches_seq"] = self_attention_out
+            # patches_sequences["img_patches_seq"] = self_attention_out
 
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
 
         if self.pooling_mode == "1D":
             self.global_average_pooling = tf.keras.layers.GlobalAveragePooling1D()
-            representation = self.global_average_pooling(self_attention_out)
+            representation = self.global_average_pooling(num_patches)
 
         elif self.pooling_mode == "2D":
             self.global_average_pooling = tf.keras.layers.GlobalAveragePooling2D()
-            representation = self.global_average_pooling(self_attention_out)
+            representation = self.global_average_pooling(num_patches)
 
         elif self.pooling_mode == "sequence_pooling":
             representation = tf.keras.layers.LayerNormalization(
-                epsilon=1e-5)(self_attention_out)
+                epsilon=1e-5)(num_patches)
             attention_weights = tf.nn.softmax(
                 tf.keras.layers.Dense(1)(representation), axis=1)
 
             weighted_representation = tf.matmul(
                 attention_weights, representation, transpose_a=True)
             representation = tf.squeeze(weighted_representation, -2)
+            print("this is sequence_pooling_shape output", representation.shape)
 
         else:
             raise Exception("you're pooling mode not available")

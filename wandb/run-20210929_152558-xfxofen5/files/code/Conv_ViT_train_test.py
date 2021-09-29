@@ -12,6 +12,7 @@ from tensorflow.keras.optimizers import schedules
 from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
 from wandb.keras import WandbCallback
 import tensorflow as tf
+tf.config.experimental_run_functions_eagerly(True)
 
 #import tensorflow as tf
 

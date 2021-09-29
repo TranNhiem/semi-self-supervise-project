@@ -430,7 +430,7 @@ def create_classification_ffn(units_neuron, dropout_rate):
             units=units, activation=tf.nn.gelu))
 
     ffn_layers.append(tf.keras.layers.Dense(
-        units=units_neuron[-1], activation='softmax'))
+        units=units_neuron[-1], ))  # activation='softmax'
     # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
     ffn = tf.keras.Sequential(ffn_layers)
 
@@ -763,13 +763,13 @@ class convnet_perceiver_architecture(tf.keras.Model):
             weighted_representation = tf.matmul(
                 attention_weights, representation, transpose_a=True)
             representation = tf.squeeze(weighted_representation, -2)
+            print("this is output sequence_pool", representation.shape)
 
         else:
             raise Exception("you're pooling mode not available")
 
         if self.include_top == True:
             representation = self.classification_head(representation)
-
         return representation
 
 
@@ -891,21 +891,22 @@ class conv_transform_VIT(tf.keras.Model):
 
         if self.pooling_mode == "1D":
             self.global_average_pooling = tf.keras.layers.GlobalAveragePooling1D()
-            representation = self.global_average_pooling(self_attention_out)
+            representation = self.global_average_pooling(num_patches)
 
         elif self.pooling_mode == "2D":
             self.global_average_pooling = tf.keras.layers.GlobalAveragePooling2D()
-            representation = self.global_average_pooling(self_attention_out)
+            representation = self.global_average_pooling(num_patches)
 
         elif self.pooling_mode == "sequence_pooling":
             representation = tf.keras.layers.LayerNormalization(
-                epsilon=1e-5)(self_attention_out)
+                epsilon=1e-5)(num_patches)
             attention_weights = tf.nn.softmax(
                 tf.keras.layers.Dense(1)(representation), axis=1)
 
             weighted_representation = tf.matmul(
                 attention_weights, representation, transpose_a=True)
             representation = tf.squeeze(weighted_representation, -2)
+            print("this is sequence_pooling_shape output", representation.shape)
 
         else:
             raise Exception("you're pooling mode not available")

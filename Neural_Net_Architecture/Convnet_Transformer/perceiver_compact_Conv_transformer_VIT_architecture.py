@@ -30,6 +30,7 @@ https://arxiv.org/abs/2106.09681
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
+from keras.layers import LayerNormalization
 
 ####################################################################################
 '''Extract Patches Unroll the Image'''
@@ -114,7 +115,7 @@ class conv_unroll_patches(tf.keras.layers.Layer):
             (-1, tf.shape(outputs)[1] * tf.shape(outputs)
              [2], tf.shape(outputs)[-1]),
         )
-        flatten_sequences = tf.cast(flatten_sequences, dtype=tf.float32)
+        flatten_sequences = tf.cast(flatten_sequences, tf.float32)
 
         return flatten_sequences
 
@@ -338,7 +339,7 @@ class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
             (-1, tf.shape(outputs)[1] * tf.shape(outputs)
              [2], tf.shape(outputs)[-1]),
         )
-        flatten_sequences = tf.cast(flatten_sequences, dtype=tf.float32)
+        flatten_sequences = tf.cast(flatten_sequences, tf.float32)
         return flatten_sequences
 
     def conv_content_position_encoding(self, image_size):
@@ -506,7 +507,8 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     x0 = inputs
     # stack multiple attention encoder block
     for i_ in range(num_transformer_block):
-        x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x0)
+        #x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x0)
+        x = LayerNormalization(epsilon=1e-6)(x0)
         # create multi-head attention
         # attention_axes=None attention over all axes
         multi_head_out = tf.keras.layers.MultiHeadAttention(num_heads=num_multi_head,
@@ -517,7 +519,8 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
         # adding skip connection (Between multi head previous layernorm --> Norm again)
 
         x1 = tf.keras.layers.Add()([multi_head_out, x])
-        x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+        #x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+        x2 = LayerNormalization(epsilon=1e-6)(x1)
         # Apply Feed forward network
         x3 = create_ffn(units_neuron=ffn_units, dropout_rate=dropout)
         if stochastic_depth:
@@ -557,9 +560,14 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
     }
 
     # Apply layer norm for each input
-    lattent_array = tf.keras.layers.LayerNormalization(
+    # lattent_array = tf.keras.layers.LayerNormalization(
+    #     epsilon=1e-6)(inputs["latent_array"])
+    lattent_array = LayerNormalization(
         epsilon=1e-6)(inputs["latent_array"])
-    data_array = tf.keras.layers.LayerNormalization(
+
+    # data_array = tf.keras.layers.LayerNormalization(
+    #     epsilon=1e-6)(inputs["data_array"])
+    data_array = LayerNormalization(
         epsilon=1e-6)(inputs["data_array"])
 
     # Create query tensor: [1, latten_dim, projection_dim]
@@ -576,7 +584,9 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
     attention_output = tf.keras.layers.Add()([attention, lattent_array])
 
     # Normalize output
-    attention_output_norm = tf.keras.layers.LayerNormalization(
+    # attention_output_norm = tf.keras.layers.LayerNormalization(
+    #     epsilon=1e-6)(attention_output)
+    attention_output_norm = LayerNormalization(
         epsilon=1e-6)(attention_output)
     # Apply Feedforward Network
     ffn = create_ffn(units_neuron=ffn_units, dropout_rate=dropout)

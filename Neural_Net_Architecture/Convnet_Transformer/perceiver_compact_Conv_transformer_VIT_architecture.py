@@ -149,7 +149,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
         print(f'Patches per image: {patches_unroll.shape[1]}')
         print(f'Elements per Patch: {patches_unroll.shape[-1]}')
         # number of rows and columns
-        n = int(np.sqrt(patches.shape[1]))
+        n = int(np.sqrt(patches_unroll.shape[1]))
     elif unroll_method == "convolution":
         '''
         Develope Visualization of Patch Unroll Here
@@ -162,7 +162,7 @@ def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
 
     plt.figure(figsize=(4, 4))
     for i, patch in enumerate(patches_unroll[0]):
-        axis = plt.subplot(n, n, i+1)
+        ax = plt.subplot(n, n, i+1)
         patch_img = tf.reshape(patch, (patch_size, patch_size, 3))
         plt.imshow(patch_img.numpy().astype("uint8"))
         plt.axis("off")
@@ -282,7 +282,7 @@ def conv_content_position_encoding(image_size, num_conv_layer, spatial2projectio
     positions = tf.range(start=0, limit=sequences_flatten_out, delta=1)
     position_encoding_out = position_encoding(positions)
     position_encoding_out = tf.cast(
-        position_encoding_out, dtype=tf.float32)
+        position_encoding_out, tf.float32)
 
     return position_encoding_out
 
@@ -368,7 +368,7 @@ class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
         positions = tf.range(start=0, limit=sequences_flatten_out, delta=1)
         position_encoding_out = position_encoding(positions)
         position_encoding_out = tf.cast(
-            position_encoding_out, dtype=tf.float32)
+            position_encoding_out, tf.float32)
 
         return position_encoding_out, sequences_flatten_out
 
@@ -830,16 +830,25 @@ class conv_transform_VIT(tf.keras.Model):
                 0, stochastic_depth_rate, num_transformer_blocks)]
 
     def build(self, input_shape):
+        # create lattent array with init random values
+        initial_input = self.add_weight(shape=(self.IMG_SIZE, self.IMG_SIZE, 3),
+                                        initializer="random_normal", trainable=True)
 
         self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layers, self.spatial2project_dim)
-
+        init_patches_seq = self.num_patches(initial_input)
         # embedding patches position content information learnable
         self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
             self.IMG_SIZE)
 
         # self.patches_postions_encoded = tf.math.add(
         #     self.num_patches, linear_position_patches)
+        # Create Latten_transformer_Attention
+        self.latent_transformer = latten_transformer_attention(init_patches_seq, self.projection_dim, self.num_multi_heads,
+                                                               self.num_transformer_block, self.ffn_units, self.dropout, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
+        # # Create transformer_self-Attention
+        # self.latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
+        #                                                   self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         # print("this is data output shape", self.patches_postions_encoded.shape)
 
@@ -867,15 +876,15 @@ class conv_transform_VIT(tf.keras.Model):
 
         patches_sequences = {"img_patches_seq": num_patches}
 
-        # Create transformer_self-Attention
-        latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
-                                                          self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
+        # # Create transformer_self-Attention
+        # latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
+        #                                                   self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         # Apply cross attention --> latent transform --> Stack multiple build deeper model
         for _ in range(self.num_transformer_blocks):
             # Applying cross attention to INPUT
             # apply latent attention to cross attention OUTPUT
-            self_attention_out = latent_transformer(patches_sequences)
+            self_attention_out = self.latent_transformer(patches_sequences)
             # set the latent array out output to the next block
             patches_sequences["img_patches_seq"] = self_attention_out
 

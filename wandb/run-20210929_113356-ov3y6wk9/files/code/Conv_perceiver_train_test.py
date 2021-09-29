@@ -107,8 +107,8 @@ with strategy.scope():
         #     lambda input_context: dataset_fn(input_context))
 
         train_ds, test_ds = data.supervised_train_ds_test_ds()
-        # train_ds = strategy.experimental_distribute_dataset(train_ds)
-        # test_ds = strategy.experimental_distribute_dataset(test_ds)
+        train_ds = strategy.experimental_distribute_dataset(train_ds)
+        test_ds = strategy.experimental_distribute_dataset(test_ds)
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
         conv_perceiver_model = convnet_perceiver_architecture(IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,

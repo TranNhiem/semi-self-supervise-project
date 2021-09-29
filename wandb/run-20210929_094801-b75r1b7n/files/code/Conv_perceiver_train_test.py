@@ -147,7 +147,7 @@ with strategy.scope():
         base_lr = 0.3
         lr_rate = WarmUpAndCosineDecay(base_lr, num_images)
         optimizers = get_optimizer(lr_rate)
-        AdamW = optimizers.optimizer_weight_decay(args)
+        AdamW = optimizers.optimizer_weight_decay
 
         # model compile
         conv_perceiver_model.compile(optimizer=AdamW,

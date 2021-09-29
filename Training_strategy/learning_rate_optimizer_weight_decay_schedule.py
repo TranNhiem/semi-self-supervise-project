@@ -224,7 +224,7 @@ class get_optimizer():
     def __init__(self, learning_rate):
         self.learning_rate = learning_rate
 
-    def orignal_optimizer(self):
+    def orignal_optimizer(self, args):
         '''Args
           - arsg.optimizer type + Learning rate
           Return Optimizer
@@ -244,7 +244,7 @@ class get_optimizer():
                                                                  'head_supervised'])
         return optimizer
 
-    def optimizer_weight_decay(self):
+    def optimizer_weight_decay(self, args):
         '''Args
           -args.optimizer + args.weight_decay
           Return Optimizer with weight Decay 
@@ -264,7 +264,7 @@ class get_optimizer():
                                                                  'head_supervised'])
         return optimizer
 
-    def optimizer_gradient_centralization(self):
+    def optimizer_gradient_centralization(self, args):
         '''
         Args
         - args.optimizer + Gradient Centralization 
@@ -290,7 +290,7 @@ class get_optimizer():
                 optimizer)
         return optimizer
 
-    def optimizer_weight_decay_gradient_centralization(self):
+    def optimizer_weight_decay_gradient_centralization(self, args):
 
         if args.optimizer == "AdamW_GC":
             optimizer = tfa.optimizers.AdamW(

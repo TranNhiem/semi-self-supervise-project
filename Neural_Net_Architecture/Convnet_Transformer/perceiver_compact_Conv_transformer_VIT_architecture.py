@@ -30,7 +30,7 @@ https://arxiv.org/abs/2106.09681
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
-from keras.layers import LayerNormalization
+from tensorflow.keras.layers import LayerNormalization
 
 ####################################################################################
 '''Extract Patches Unroll the Image'''

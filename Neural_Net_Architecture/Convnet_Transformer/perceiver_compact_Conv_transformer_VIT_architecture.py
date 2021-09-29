@@ -845,7 +845,7 @@ class conv_transform_VIT(tf.keras.Model):
         # Classification Head Configure
         if self.include_top == True:
             self.classification_head = create_classification_ffn(
-                units_neuron=self.classifier_units, dropout_rate=self.dropout)
+                units_neuron=self.classifier_units, dropout_rate=self.dropout_rate)
 
         super(conv_transform_VIT, self).build(input_shape)
 

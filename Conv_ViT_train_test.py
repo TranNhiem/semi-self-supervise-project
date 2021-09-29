@@ -95,10 +95,10 @@ with strategy.scope():
         BATCH_SIZE = args.train_batch_size
         EPOCHS = args.train_epochs
 
-        # Prepare data training
-        data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
-        num_images = data.num_train_images
-        train_ds, test_ds = data.supervised_train_ds_test_ds()
+        # # Prepare data training
+        # data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
+        # num_images = data.num_train_images
+        # train_ds, test_ds = data.supervised_train_ds_test_ds()
 
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]

@@ -792,13 +792,17 @@ class conv_transform_VIT(tf.keras.Model):
 
     '''
 
-    def __init__(self, num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option,
-                 num_transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, stochastic_depth, dropout, include_top):
+    def __init__(self, num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
+                 num_transformer_blocks, num_head_attention, ffn_units, classification_unit,
+                 dropout, stochastic_depth=False, stochastic_depth_rate=0.1,
+                 include_top='False', pooling_mode="1D",
+                 ):
         super(conv_transform_VIT, self).__init__(name="C_Conv_Perceiver_Arch")
 
         # For classification Configure
         self.num_class = num_class
         self.include_top = include_top
+        self.pooling_mode = pooling_mode
         self.IMG_SIZE = IMG_SIZE
 
         # Attention module Configure
@@ -808,6 +812,7 @@ class conv_transform_VIT(tf.keras.Model):
         self.embedding_option = embedding_option
         # MPL configure
         self.ffn_units = ffn_units
+        self.classifier_units = classification_unit
         self.dropout_rate = dropout
 
         # Convolution patches unroll Configure
@@ -826,7 +831,7 @@ class conv_transform_VIT(tf.keras.Model):
     def build(self, input_shape):
 
         self.num_patches = conv_unroll_patches_position_encoded(
-            self.num_conv_layer, self.spatial2projection_dim)
+            self.num_conv_layers, self.spatial2project_dim)
 
         # embedding patches position content information learnable
         linear_position_patches = self.num_patches.conv_content_position_encoding(

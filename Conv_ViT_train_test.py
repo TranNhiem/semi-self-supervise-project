@@ -87,18 +87,22 @@ print(f"Image size: {IMG_SIZE} X {IMG_SIZE} = {IMG_SIZE ** 2}")
 
 # print(f"Data array shape: {num_patches} X {projection_dim}")
 
+args = parse_args()
+BATCH_SIZE = args.train_batch_size
+BATCH_SIZE = BATCH_SIZE * strategy.num_replicas_in_sync
+print("Global _batch_size", BATCH_SIZE)
+
 
 with strategy.scope():
 
     def main(args):
 
-        BATCH_SIZE = args.train_batch_size
         EPOCHS = args.train_epochs
 
         # # Prepare data training
-        # data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
-        # num_images = data.num_train_images
-        # train_ds, test_ds = data.supervised_train_ds_test_ds()
+        data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
+        num_images = data.num_train_images
+        train_ds, test_ds = data.supervised_train_ds_test_ds()
 
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
@@ -117,19 +121,18 @@ with strategy.scope():
         x = tf.random.normal((BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3))
         h = conv_VIT_model(x, training=False)
         print("Succeed Initialize online encoder")
-        print(f"Conv_Perciever encoder OUTPUT: {h.shape}")
+        print(f"Conv_ViT encoder OUTPUT: {h.shape}")
 
         num_params_f = tf.reduce_sum(
             [tf.reduce_prod(var.shape) for var in conv_VIT_model.trainable_variables])
         print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
-        '''
         # Configure Logs recording during training
-        
-        #Training Configure
+
+        # Training Configure
 
         configs = {
-            "Model_Arch": "Conv_Perceiver_arch",
+            "Model_Arch": "Conv_ViT_arch",
             "DataAugmentation_types": "None for testing",
             "Dataset": "Cifar100",
             "IMG_SIZE": IMG_SIZE,
@@ -164,25 +167,28 @@ with strategy.scope():
         # optimizer = tfa.optimizers.AdamW(
         #     learning_rate=init_lr, weight_decay=weight_decay)
 
+        ################################
         # Custom Define Hyperparameter
-
+        ################################
         # 3. Schedule CosineDecay warmup
         base_lr = 0.3
-        lr_rate = WarmUpAndCosineDecay(base_lr, num_images)
-        optimizers = get_optimizer(lr_rate)
-        AdamW = optimizers.optimizer_weight_decay
+        lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
+        # optimizers = get_optimizer(lr_rate)
+        # AdamW = optimizers.optimizer_weight_decay(args)
+        # Borrow testing
+        optimizer = tfa.optimizers.AdamW(
+            learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         # model compile
-        conv_perceiver_model.compile(optimizer=AdamW,
-                                     loss=tf.keras.losses.CategoricalCrossentropy(),
-                                     metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
-                                              tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
+        conv_VIT_model.compile(optimizer=optimizer,
+                               loss=tf.keras.losses.CategoricalCrossentropy(),
+                               metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
+                                        tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
 
         # MODEL TRAINING
 
-        conv_perceiver_model.fit(train_ds, epochs=EPOCHS,
-                                 validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
-        '''
+        conv_VIT_model.fit(train_ds, epochs=EPOCHS,
+                           validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
 
     if __name__ == '__main__':
 

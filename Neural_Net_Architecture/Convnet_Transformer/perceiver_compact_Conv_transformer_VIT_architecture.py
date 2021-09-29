@@ -831,12 +831,13 @@ class conv_transform_VIT(tf.keras.Model):
 
     def build(self, input_shape):
         # create lattent array with init random values
-        initial_input = self.add_weight(shape=(self.IMG_SIZE, self.IMG_SIZE, 3),
-                                        initializer="random_normal", trainable=True)
+
+        # initial_input = self.add_weight(shape=input_shape,
+        #                                 initializer="random_normal", trainable=True)
 
         self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layers, self.spatial2project_dim)
-        init_patches_seq = self.num_patches(initial_input)
+
         # embedding patches position content information learnable
         self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
             self.IMG_SIZE)
@@ -844,11 +845,8 @@ class conv_transform_VIT(tf.keras.Model):
         # self.patches_postions_encoded = tf.math.add(
         #     self.num_patches, linear_position_patches)
         # Create Latten_transformer_Attention
-        self.latent_transformer = latten_transformer_attention(init_patches_seq, self.projection_dim, self.num_multi_heads,
-                                                               self.num_transformer_block, self.ffn_units, self.dropout, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
-        # # Create transformer_self-Attention
-        # self.latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
-        #                                                   self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
+        self.latent_transformer = latten_transformer_attention(self.data_dim, self.projection_dim, self.num_head_attention,
+                                                               self.num_transformer_blocks, self.ffn_units, self.dropout_rate, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         # print("this is data output shape", self.patches_postions_encoded.shape)
 
@@ -874,7 +872,7 @@ class conv_transform_VIT(tf.keras.Model):
         print("Debug Covnet Unroll Patches Output",
               num_patches.shape)
 
-        patches_sequences = {"img_patches_seq": num_patches}
+        # patches_sequences = {"img_patches_seq": num_patches}
 
         # # Create transformer_self-Attention
         # latent_transformer = latten_transformer_attention(num_patches, self.projection_dim, self.num_head_attention,
@@ -884,9 +882,10 @@ class conv_transform_VIT(tf.keras.Model):
         for _ in range(self.num_transformer_blocks):
             # Applying cross attention to INPUT
             # apply latent attention to cross attention OUTPUT
-            self_attention_out = self.latent_transformer(patches_sequences)
+            self_attention_out = self.latent_transformer(num_patches)
+            num_patches = self_attention_out
             # set the latent array out output to the next block
-            patches_sequences["img_patches_seq"] = self_attention_out
+            # patches_sequences["img_patches_seq"] = self_attention_out
 
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
 

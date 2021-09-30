@@ -18,9 +18,8 @@ import tensorflow as tf
 wandb.login()
 
 include_top = True
-# if include_top:
-#     # tf.config.experimental_run_functions_eagerly(True)
-#     tf.config.run_functions_eagerly(True)
+if include_top:
+    tf.config.experimental_run_functions_eagerly(True)
 
 
 # Setting GPUs
@@ -121,7 +120,7 @@ with strategy.scope():
         conv_perceiver_model = convnet_perceiver_architecture(IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
                                                               latten_dim, projection_dim, num_multi_heads,
                                                               NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                              classification_head, include_top=include_top, pooling_mode="1D",
+                                                              classification_head, include_top=include_top, pooling_mode="sequence_pooling",
                                                               stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))

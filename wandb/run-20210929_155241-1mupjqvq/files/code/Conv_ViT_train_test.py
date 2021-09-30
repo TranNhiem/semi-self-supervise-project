@@ -15,9 +15,9 @@ import tensorflow as tf
 
 
 include_top = True
-# if include_top:
-#     # tf.config.experimental_run_functions_eagerly(True)
-#     tf.config.run_functions_eagerly(True)
+if include_top:
+    # tf.config.experimental_run_functions_eagerly(True)
+    tf.config.run_functions_eagerly(True)
 
 #import tensorflow as tf
 
@@ -117,7 +117,7 @@ with strategy.scope():
                                             NUM_TRANSFORMER_BLOCK, num_multi_heads,
                                             FFN_layers_units, classification_unit, dropout_rate,
                                             stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
-                                            include_top=include_top, pooling_mode="1D",
+                                            include_top=include_top, pooling_mode="sequence_pooling",
                                             )
 
         conv_VIT_model(tf.keras.Input((input_shape)))

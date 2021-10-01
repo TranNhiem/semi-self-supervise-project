@@ -1021,7 +1021,8 @@ class conv_transform_VIT_V1(tf.keras.Model):
                  dropout, stochastic_depth=False, stochastic_depth_rate=0.1,
                  include_top='False', pooling_mode="1D",
                  ):
-        super(conv_transform_VIT, self).__init__(name="C_Conv_Perceiver_Arch")
+        super(conv_transform_VIT_V1, self).__init__(
+            name="C_Conv_Perceiver_Arch")
 
         # For classification Configure
         self.num_class = num_class
@@ -1087,7 +1088,7 @@ class conv_transform_VIT_V1(tf.keras.Model):
             self.classification_head = create_classification_ffn(
                 units_neuron=self.classifier_units, dropout_rate=self.dropout_rate)
 
-        super(conv_transform_VIT, self).build(input_shape)
+        super(conv_transform_VIT_V1, self).build(input_shape)
 
     def call(self, inputs):
         # Augmentation option --> self-supervised processing outside
@@ -1125,8 +1126,8 @@ class conv_transform_VIT_V1(tf.keras.Model):
 # Building Architecture By Function
 
 
-def conv_transform_VIT_V1(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
-                          transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
+def conv_transform_VIT_V1_func(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
+                               transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
 
     input = tf.keras.layers.Input(input_shape)
     # Conv patches unroll

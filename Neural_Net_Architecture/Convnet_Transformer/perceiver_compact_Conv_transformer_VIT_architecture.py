@@ -836,7 +836,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
         representation = self.output_pooling(
-            cross_attention_input["data_arrays"])
+            latent_array)
 
         if self.include_top == True:
             representation = self.classification_head(representation)

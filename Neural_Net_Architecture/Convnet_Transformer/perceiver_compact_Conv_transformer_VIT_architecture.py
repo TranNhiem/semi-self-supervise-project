@@ -838,7 +838,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
         # representation = self.output_pooling(
         #     latent_array)
         representation = tf.keras.layers.LayerNormalization(
-            epsilon=1e-5)(attention_output)
+            epsilon=1e-5)(latent_array)
         attention_weights = tf.nn.softmax(
             tf.keras.layers.Dense(1)(representation), axis=1)
         weighted_representation = tf.matmul(

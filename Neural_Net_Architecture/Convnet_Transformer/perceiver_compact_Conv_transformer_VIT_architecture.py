@@ -1187,7 +1187,7 @@ class conv_transform_VIT_V1_(tf.keras.Model):
 
         if self.embedding_option:
             # embedding patches position content information learnable
-            self.patches_position_encoding, self.data_dim = self.num_patches_encoded.conv_content_position_encoding(
+            self.patches_position_encoding, self.data_dim = self.num_patches.conv_content_position_encoding(
                 self.IMG_SIZE)
             #self.num_patches_encoded = self.patches_position_encoding
 

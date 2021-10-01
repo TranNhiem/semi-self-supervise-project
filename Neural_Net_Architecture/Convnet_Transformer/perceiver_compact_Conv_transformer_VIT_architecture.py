@@ -1182,22 +1182,22 @@ class conv_transform_VIT_V1_(tf.keras.Model):
 
         # initial_input = self.add_weight(shape=input_shape,
         #                                 initializer="random_normal", trainable=True)
-        self.num_patches_encoded = conv_unroll_patches_position_encoded(
+        self.num_patches = conv_unroll_patches_position_encoded(
             self.num_conv_layers, self.spatial2project_dim)
 
         if self.embedding_option:
             # embedding patches position content information learnable
             self.patches_position_encoding, self.data_dim = self.num_patches_encoded.conv_content_position_encoding(
                 self.IMG_SIZE)
-            self.num_patches_encoded = self.patches_position_encoding
+            #self.num_patches_encoded = self.patches_position_encoding
 
         # self.patches_postions_encoded = tf.math.add(
         #     self.num_patches, linear_position_patches)
 
-        # if self.pooling_mode == "1D":
-        #     self.output_pooling = tf.keras.layers.GlobalAveragePooling1D()
-        # elif self.pooling_mode == "sequence_pooling":
-        #     self.output_pooling = sequence_pooling()
+        if self.pooling_mode == "1D":
+            self.output_pooling = tf.keras.layers.GlobalAveragePooling1D()
+        elif self.pooling_mode == "sequence_pooling":
+            self.output_pooling = sequence_pooling()
 
         else:
             raise ValueError("Not supported pooling mode")
@@ -1212,8 +1212,10 @@ class conv_transform_VIT_V1_(tf.keras.Model):
     def call(self, inputs):
         # Augmentation option --> self-supervised processing outside
         # create patches
-        num_patches = conv_unroll_patches_position_encoded(
-            self.num_conv_layers, self.spatial2project_dim)(inputs)
+        # num_patches = conv_unroll_patches_position_encoded(
+        #     self.num_conv_layers, self.spatial2project_dim)(inputs)
+        num_patches = self.num_patches(inputs)
+
         if self.embedding_option:
 
             # embedding patches position content information learnable
@@ -1260,11 +1262,11 @@ class conv_transform_VIT_V1_(tf.keras.Model):
             # patches_sequences["img_patches_seq"] = self_attention_out
 
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
-        if self.pooling_mode == "1D":
-            representation = tf.keras.layers.GlobalAveragePooling1D()(num_patches)
-        elif self.pooling_mode == "sequence_pooling":
-            representation = sequence_pooling()(num_patches)
-        #representation = self.output_pooling(num_patches)
+        # if self.pooling_mode == "1D":
+        #     representation = tf.keras.layers.GlobalAveragePooling1D()(num_patches)
+        # elif self.pooling_mode == "sequence_pooling":
+        #     representation = sequence_pooling()(num_patches)
+        representation = self.output_pooling(num_patches)
         print("this is pooling output", representation.shape)
 
         if self.include_top == True:

@@ -279,6 +279,7 @@ elif args.communication_method == "auto":
         implementation=tf.distribute.experimental.CollectiveCommunication.AUTO)
 
 
+
 else:
     raise ValueError("Invalid implemenation commnuciation")
 strategy = tf.distribute.MultiWorkerMirroredStrategy(
@@ -361,8 +362,7 @@ with strategy.scope():
                     scaled_grads = tape.gradient(
                         scale_loss, model.trainable_variables)
                     gradients = optimizer.get_unscaled_gradients(scaled_grads)
-                    hints = tf.distribute.experimental.CollectiveHints(
-                        bytes_per_pack=25 * 1024 * 1024)
+                    hints = tf.distribute.experimental.CollectiveHints(bytes_per_pack=25 * 1024 * 1024)
 
                     gradients = tf.distribute.get_replica_context().all_reduce(
                         tf.distribute.ReduceOp.SUM, gradients, options=hints)

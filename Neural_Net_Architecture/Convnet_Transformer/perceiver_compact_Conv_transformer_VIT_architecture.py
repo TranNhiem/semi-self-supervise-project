@@ -1,28 +1,28 @@
 '''
 Three Seprate Architecture of Conv-Transformer
-1. Conv- Self-Attention ViT architecture 
+1. Conv- Self-Attention ViT architecture
 2. Conv- Cross- Attention Architecture
 3. CIT -- Cross-Covariance Attention (XCA) (Basicly Conv1 architecture)
 https://arxiv.org/abs/2106.09681
 
-### General Architecture Building Steps
-1/--> Unroll image to small patches 
-    + Patches unroll image 
+# General Architecture Building Steps
+1/--> Unroll image to small patches
+    + Patches unroll image
     + Using Conv unroll image
 
-2/ --> Position Embeddeding for attention mechanism --> 
+2/ --> Position Embeddeding for attention mechanism -->
     + (Conv-ViT -- Position embedding seem not effect too much)
-    + Building Sinoudsoid position embedding 
-    + linear position embedding 
-    + other techniques for position embedding 
+    + Building Sinoudsoid position embedding
+    + linear position embedding
+    + other techniques for position embedding
 
 3/ --> Attention (mechanism)(cross attention -- self attention layer)
-    
+
     + Model Depth ()
     + Model Width ()
-    + Depth and width with scaling factors 
+    + Depth and width with scaling factors
 
-4/ --> Feature Embedding ouput --> Maxpooling -- Encoding flattent 
+4/ --> Feature Embedding ouput --> Maxpooling -- Encoding flattent
 
 '''
 
@@ -69,7 +69,7 @@ class patches(tf.keras.layers.Layer):
 
 class conv_unroll_patches(tf.keras.layers.Layer):
     '''
-    Args, 
+    Args,
     Number of Conv Layer
     Spatial_dim_to_projection_dim
 
@@ -124,13 +124,13 @@ class conv_unroll_patches(tf.keras.layers.Layer):
 
 def display_pathches(image, IMG_SIZE, patch_size, unroll_method="tf_patches"):
     '''
-    Args: 
+    Args:
         image: input image
-        IMG_SIZE: 
-        Patch_size: 
-        Unroll_method: 
-    Return 
-        Sequence of patches 
+        IMG_SIZE:
+        Patch_size:
+        Unroll_method:
+    Return
+        Sequence of patches
     '''
     plt.figure(figsize=(4, 4))
     plt.imshow(image)
@@ -226,7 +226,7 @@ class conv_content_position_encoding_cls(tf.keras.layers.Layer):
         Embedding position vectors
 
     '''
-    ##  num_patches == Sequence_flatten,
+    # num_patches == Sequence_flatten,
     # projection_dim= sequence_length -- depend on the
 
     # Noted project_dim == Latten Array
@@ -291,7 +291,7 @@ def conv_content_position_encoding(image_size, num_conv_layer, spatial2projectio
 
 class conv_unroll_patches_position_encoded(tf.keras.layers.Layer):
     '''
-    Args, 
+    Args,
     Number of Conv Layer
     Spatial_dim_to_projection_dim
 
@@ -454,13 +454,13 @@ class stochasticDepth(tf.keras.layers.Layer):
         self.drop_layer = drop_layer
 
     def call(self, x, training=None):
-        #print("this is tensor shape", x.shape)
+        # print("this is tensor shape", x.shape)
         if training:
             keep_layer = 1 - self.drop_layer
             # shape = (tf.shape(x)[0], ) + (1, ) * \
             #     (len(tf.shape(x, out_type=tf.dtypes.int32))-1)
             shape = (tf.shape(x)[0], ) + (1, )*(len(x.shape)-1)
-            #print("this is the tensor shape", shape)
+            # print("this is the tensor shape", shape)
             random_tensor = keep_layer + tf.random.uniform(shape, 0, 1)
             random_tensor = tf.floor(random_tensor)
             return (x / keep_layer) * random_tensor
@@ -478,15 +478,22 @@ class stochasticDepth(tf.keras.layers.Layer):
 
 
 # Sequence Pooling Mode
-def sequence_pooling(attention_output):
-    representation = tf.keras.layers.LayerNormalization(
-        epsilon=1e-5)(attention_output)
-    attention_weights = tf.nn.softmax(
-        tf.keras.layers.Dense(1)(representation), axis=1)
-    weighted_representation = tf.matmul(
-        attention_weights, representation, transpose_a=True
-    )
-    weighted_representation = tf.squeeze(weighted_representation, -2)
+class sequence_pooling(tf.keras.layers.Layer):
+
+    def __init__(self, ):
+        super(sequence_pooling, self).__init__(name="Sequence_pooling_layer")
+
+    def call(self, attention_output):
+        representation = tf.keras.layers.LayerNormalization(
+            epsilon=1e-5)(attention_output)
+        attention_weights = tf.nn.softmax(
+            tf.keras.layers.Dense(1)(representation), axis=1)
+        weighted_representation = tf.matmul(
+            attention_weights, representation, transpose_a=True
+        )
+        weighted_representation = tf.squeeze(weighted_representation, -2)
+
+        return weighted_representation
 
 
 ####################################################################################
@@ -527,7 +534,7 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     x0 = inputs
     # stack multiple attention encoder block
     for i_ in range(num_transformer_block):
-        #x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x0)
+        # x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x0)
         x = LayerNormalization(epsilon=1e-6)(x0)
         # create multi-head attention
         # attention_axes=None attention over all axes
@@ -539,7 +546,7 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
         # adding skip connection (Between multi head previous layernorm --> Norm again)
 
         x1 = tf.keras.layers.Add()([multi_head_out, x])
-        #x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+        # x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
         x2 = LayerNormalization(epsilon=1e-6)(x1)
         # Apply Feed forward network
         x3 = create_ffn(units_neuron=ffn_units, dropout_rate=dropout)
@@ -556,8 +563,8 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     return model
 
 
-def VIT_attention_Module_v1_design(inputs, num_multi_head,
-                                   ffn_units, dropout, stochastic_depth=False, dpr=None):
+def VIT_attention_Module_v1_design(inputs, i_, num_multi_head,
+                                   ffn_units, dropout, projection_dim, stochastic_depth=False, dpr=None):
     '''
     Args:
         inputs: Encoded patches output form the Conv-Unroll
@@ -583,7 +590,7 @@ def VIT_attention_Module_v1_design(inputs, num_multi_head,
     # adding skip connection (Between multi head previous layernorm --> Norm again)
 
     x1 = tf.keras.layers.Add()([self_attention_out, x])
-    #x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+    # x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
     x2 = LayerNormalization(epsilon=1e-6)(x1)
 
     # Apply MLP Feed forward network
@@ -666,7 +673,7 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
 ####################################################################################
 '''1. Building Conv-Transformer Architecture
 
-##  The important of Covolution Transformer
+# The important of Covolution Transformer
  
 +1. The Stochastic Dropout (Regularization for self-Attention Blocks)
 
@@ -1071,8 +1078,8 @@ class conv_transform_VIT_V1(tf.keras.Model):
         # self.patches_postions_encoded = tf.math.add(
         #     self.num_patches, linear_position_patches)
         # Create Latten_transformer_Attention
-        self.self_attention_out = VIT_attention_Module_v1_design(inputs=self.num_patches_encoded, num_multi_head=self.num_head_attention,
-                                                                 ffn_units=self.ffn_units, dropout=self.dropout_rate)
+        self.self_attention_out = VIT_attention_Module_v1_design(inputs=self.num_patches_encoded, i_=1, num_multi_head=self.num_head_attention, stochastic_depth=self.stochastic_depth,
+                                                                 ffn_units=self.ffn_units, dropout=self.dropout_rate, projection_dim=self.projection_dim, dpr=self.dpr)
         # print("this is data output shape", self.patches_postions_encoded.shape)
 
         if self.pooling_mode == "1D":
@@ -1093,7 +1100,8 @@ class conv_transform_VIT_V1(tf.keras.Model):
     def call(self, inputs):
         # Augmentation option --> self-supervised processing outside
         # create patches
-        num_patches = self.num_patches(inputs)
+        num_patches = conv_unroll_patches_position_encoded(
+            self.num_conv_layers, self.spatial2project_dim)(inputs)
         if self.embedding_option:
 
             # embedding patches position content information learnable
@@ -1105,10 +1113,11 @@ class conv_transform_VIT_V1(tf.keras.Model):
               num_patches.shape)
 
         # Apply cross attention --> latent transform --> Stack multiple build deeper model
-        for _ in range(self.num_transformer_blocks):
+        for i_ in range(self.num_transformer_blocks):
             # Applying cross attention to INPUT
             # apply latent attention to cross attention OUTPUT
-            self_attention_out = self.self_attention_out(num_patches)
+            self_attention_out = self.self_attention_out(num_patches, i_=i_)
+
             num_patches = self_attention_out
             # set the latent array out output to the next block
             # patches_sequences["img_patches_seq"] = self_attention_out
@@ -1116,6 +1125,143 @@ class conv_transform_VIT_V1(tf.keras.Model):
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
 
         representation = self.pooling_mode(num_patches)
+        print("this is pooling output", representation.shape)
+
+        if self.include_top == True:
+            representation = self.classification_head(representation)
+
+        return representation
+
+
+class conv_transform_VIT_V1_(tf.keras.Model):
+    '''args
+    Noted the projection_dim= spatial2project_dim[-1]
+
+    '''
+
+    def __init__(self, num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
+                 num_transformer_blocks, num_head_attention, ffn_units, classification_unit,
+                 dropout, stochastic_depth=False, stochastic_depth_rate=0.1,
+                 include_top='False', pooling_mode="1D",
+                 ):
+        super(conv_transform_VIT_V1_, self).__init__(
+            name="C_Conv_Perceiver_Arch")
+
+        # For classification Configure
+        self.num_class = num_class
+        self.include_top = include_top
+        self.pooling_mode = pooling_mode
+        self.IMG_SIZE = IMG_SIZE
+
+        # Attention module Configure
+        self.num_head_attention = num_head_attention
+        self.num_transformer_blocks = num_transformer_blocks
+        self.projection_dim = projection_dim
+        self.embedding_option = embedding_option
+        # MPL configure
+        self.ffn_units = ffn_units
+        self.classifier_units = classification_unit
+        self.dropout_rate = dropout
+
+        # Convolution patches unroll Configure
+        self.num_conv_layers = num_conv_layers
+        self.spatial2project_dim = spatial2project_dim
+
+        # Configure for Stochastic Depth
+        self.stochastic_depth_rate = stochastic_depth_rate
+        self.stochastic_depth = stochastic_depth
+        self.dpr = None
+        if stochastic_depth:
+            # calculate Stochastic propability
+            self.stochastic_depth = stochastic_depth
+            self.dpr = [x for x in np.linspace(
+                0, stochastic_depth_rate, num_transformer_blocks)]
+
+    def build(self, input_shape):
+        # create lattent array with init random values
+
+        # initial_input = self.add_weight(shape=input_shape,
+        #                                 initializer="random_normal", trainable=True)
+        self.num_patches_encoded = conv_unroll_patches_position_encoded(
+            self.num_conv_layers, self.spatial2project_dim)
+
+        if self.embedding_option:
+            # embedding patches position content information learnable
+            self.patches_position_encoding, self.data_dim = self.num_patches_encoded.conv_content_position_encoding(
+                self.IMG_SIZE)
+            self.num_patches_encoded = self.patches_position_encoding
+
+        # self.patches_postions_encoded = tf.math.add(
+        #     self.num_patches, linear_position_patches)
+
+        if self.pooling_mode == "1D":
+            self.output_pooling = tf.keras.layers.GlobalAveragePooling1D()
+        elif self.pooling_mode == "sequence_pooling":
+            self.output_pooling = sequence_pooling()
+
+        else:
+            raise ValueError("Not supported pooling mode")
+
+        # Classification Head Configure
+        if self.include_top == True:
+            self.classification_head = create_classification_ffn(
+                units_neuron=self.classifier_units, dropout_rate=self.dropout_rate)
+
+        super(conv_transform_VIT_V1_, self).build(input_shape)
+
+    def call(self, inputs):
+        # Augmentation option --> self-supervised processing outside
+        # create patches
+        num_patches = conv_unroll_patches_position_encoded(
+            self.num_conv_layers, self.spatial2project_dim)(inputs)
+        if self.embedding_option:
+
+            # embedding patches position content information learnable
+            linear_position_patches = self.patches_position_encoding
+            num_patches = tf.math.add(
+                num_patches, linear_position_patches)
+
+        print("Debug Covnet Unroll Patches Output",
+              num_patches.shape)
+
+        # Apply cross attention --> latent transform --> Stack multiple build deeper model
+        for i_ in range(self.num_transformer_blocks):
+            # Applying cross attention to INPUT
+            # apply latent attention to cross attention OUTPUT
+
+            x = LayerNormalization(epsilon=1e-6)(num_patches)
+            # create multi-head attention
+            # attention_axes=None attention over all axes
+            self_attention_out = tf.keras.layers.MultiHeadAttention(num_heads=self.num_head_attention,
+                                                                    key_dim=self.projection_dim, dropout=self.dropout_rate)(x, x)
+
+            if self.stochastic_depth:
+                self_attention_out = stochasticDepth(
+                    self.dpr[i_])(self_attention_out)
+            # adding skip connection (Between multi head previous layernorm --> Norm again)
+
+            x1 = tf.keras.layers.Add()([self_attention_out, x])
+            # x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+            x2 = LayerNormalization(epsilon=1e-6)(x1)
+
+            # Apply MLP Feed forward network
+
+            x3 = MLP_ffn_v1_design(
+                x2, hidden_units=self.ffn_units, dropout_rate=self.dropout_rate)
+
+            if self.stochastic_depth:
+                x3 = stochasticDepth(self.dpr[i_])(x3)
+
+            # Adding skip connection (betwen Layersnorm and ffn_output)
+            x3 = tf.keras.layers.Add()([x3, x2])
+
+            num_patches = x3
+            # set the latent array out output to the next block
+            # patches_sequences["img_patches_seq"] = self_attention_out
+
+        # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
+
+        representation = self.output_pooling(num_patches)
         print("this is pooling output", representation.shape)
 
         if self.include_top == True:

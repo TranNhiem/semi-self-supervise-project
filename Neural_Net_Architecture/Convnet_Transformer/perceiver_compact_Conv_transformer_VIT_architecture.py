@@ -483,7 +483,7 @@ class sequence_pooling(tf.keras.layers.Layer):
     def __init__(self, ):
         super(sequence_pooling, self).__init__(name="Sequence_pooling_layer")
 
-    def call(self, attention_output):
+    def call(self, attention_output, training=False):
         representation = tf.keras.layers.LayerNormalization(
             epsilon=1e-5)(attention_output)
         attention_weights = tf.nn.softmax(

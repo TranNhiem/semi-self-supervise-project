@@ -19,8 +19,9 @@ include_top = True
 #     # tf.config.experimental_run_functions_eagerly(True)
 #     tf.config.run_functions_eagerly(True)
 
-#import tensorflow as tf
-
+# import tensorflow as tf
+checkpoint_dir = './test_model_checkpoint/'
+checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 wandb.login()
 
 # Setting GPUs
@@ -28,7 +29,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[6:8], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -94,9 +95,9 @@ print(f"Image size: {IMG_SIZE} X {IMG_SIZE} = {IMG_SIZE ** 2}")
 # print(f"Data array shape: {num_patches} X {projection_dim}")
 
 args = parse_args()
-BATCH_SIZE = args.train_batch_size
-BATCH_SIZE = BATCH_SIZE * strategy.num_replicas_in_sync
-print("Global _batch_size", BATCH_SIZE)
+BATCH_SIZE_per_replica = args.train_batch_size
+global_BATCH_SIZE = BATCH_SIZE_per_replica * strategy.num_replicas_in_sync
+print("Global _batch_size", global_BATCH_SIZE)
 
 
 with strategy.scope():
@@ -106,9 +107,11 @@ with strategy.scope():
         EPOCHS = args.train_epochs
 
         # # Prepare data training
-        data = CIFAR100_dataset(BATCH_SIZE, IMG_SIZE)
+        data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
         num_images = data.num_train_images
         train_ds, test_ds = data.supervised_train_ds_test_ds()
+        train_ds = strategy.experimental_distribute_dataset(train_ds)
+        test_ds = strategy.experimental_distribute_dataset(test_ds)
 
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
@@ -131,7 +134,7 @@ with strategy.scope():
         conv_VIT_model.summary()
 
         # Initialize the Random weight
-        x = tf.random.normal((BATCH_SIZE, IMG_SIZE, IMG_SIZE, 3))
+        x = tf.random.normal((BATCH_SIZE_per_replica, IMG_SIZE, IMG_SIZE, 3))
         h = conv_VIT_model(x, training=False)
         print("Succeed Initialize online encoder")
         print(f"Conv_ViT encoder OUTPUT: {h.shape}")
@@ -150,7 +153,7 @@ with strategy.scope():
             "Dataset": "Cifar100",
             "IMG_SIZE": IMG_SIZE,
             "Epochs": EPOCHS,
-            "Batch_size": BATCH_SIZE,
+            "Batch_size": BATCH_SIZE_per_replica,
             "Learning_rate": "1e-3*Batch_size/512",
             "Optimizer": "AdamW",
             "SEED": SEED,
@@ -192,6 +195,8 @@ with strategy.scope():
         optimizer = tfa.optimizers.AdamW(
             learning_rate=lr_rate, weight_decay=args.weight_decay)
 
+        checkpoint = tf.train.Checkpoint(
+            optimizer=optimizer, model=conv_VIT_model)
         # model compile
         # conv_VIT_model.compile(optimizer=optimizer,
         #                        loss=tf.keras.losses.CategoricalCrossentropy(),
@@ -203,29 +208,86 @@ with strategy.scope():
         # conv_VIT_model.fit(train_ds, epochs=EPOCHS,
         #                    validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
 
+        ##########################################
+        # Custom Keras Loss
+        ##########################################
+
+        loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                    reduction=tf.keras.losses.Reduction.NONE)
+
+        def distributed_loss(lables, predictions):
+            # each GPU loss per_replica batch loss
+            per_example_loss = loss_object(labels, predictions)
+            # total sum loss //Global batch_size
+            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
+
+        test_loss = tf.keras.metrics.Mean(name='test_loss')
+        train_loss = tf.keras.metrics.Mean(name="train_loss")
+        train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            name='train_accuracy')
+        test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            name='test_accuracy')
+
         @tf.function
         def train_step_evaluation(x, y):  # (bs, 32, 32, 3), (bs)
-
             # Forward pass
             with tf.GradientTape() as tape:
                 # (bs, 512)
-                y_pred_logits = conv_VIT_model(x)  # (bs, 10)
-                loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
-                    labels=y, logits=y_pred_logits))
-
+                y_pred_logits = conv_VIT_model(x, training=True)  # (bs, 10)
+                loss = distributed_loss(y, y_pred_logits)
             # Backward pass
             grads = tape.gradient(loss, conv_VIT_model.trainable_variables)
             optimizer.apply_gradients(
                 zip(grads, conv_VIT_model.trainable_variables))
 
-            return loss
-        batches_per_epochs = num_images/BATCH_SIZE
-        for epoch_id in range(EPOCHS):
+            train_accuracy.update_state(y, y_pred_logits)
+            train_loss.update(loss)
 
-            for batches in range(int(batches_per_epochs))
-            x = next(iter(train_ds))
-            y = next(iter(test_ds))
-            loss = train_step_evaluation(x, y)
+            return loss
+
+        def test_step(x, y):
+            images = x
+            labels = y
+
+            predictions = conv_VIT_model(images, training=False)
+            t_loss = loss_object(labels, predictions)
+
+            test_loss.update_state(t_loss)
+            test_accuracy.update_state(labels, predictions)
+
+        @ tf.function
+        def distributed_train_step(ds_one, ds_two):
+            per_replica_losses = strategy.run(
+                train_step_evaluation, args=(ds_one, ds_two))
+            return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                                   axis=None)
+
+        @ tf.function
+        def distributed_test_step(ds_one, ds_two):
+            return strategy.run(test_step, args=(ds_one, ds_two))
+
+        for epoch_id in range(EPOCHS):
+            total_loss = 0.0
+            num_batches = 0
+            for train_x, train_y in enumerate(train_ds):
+                totla_loss += distributed_train_step(train_x, train_y)
+                num_batches += 1
+            train_loss = total_loss/num_batches
+
+            for test_x, test_y in enumerate(test_ds):
+                distributed_test_step(test_x, test_y)
+            if epoch_id % 10 == 0:
+                checkpoint.save(checkpoint_prefix)
+
+            template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
+                        "Test Accuracy: {}")
+            print(template.format(epoch+1, train_loss,
+                                  train_accuracy.result()*100, test_loss.result(),
+                                  test_accuracy.result()*100))
+
+            test_loss.reset_states()
+            train_accuracy.reset_states()
+            test_accuracy.reset_states()
 
     if __name__ == '__main__':
 

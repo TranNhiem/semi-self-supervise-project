@@ -276,7 +276,7 @@ with strategy.scope():
                 total_loss += distributed_train_step(train_x, train_y)
                 num_batches += 1
             train_losses = total_loss/num_batches
-            train_loss.update_state(train_losses)
+            # train_loss.update_state(train_losses)
             for _, (test_x, test_y) in enumerate(test_ds):
                 distributed_test_step(test_x, test_y)
             if epoch_id % 10 == 0:
@@ -296,7 +296,7 @@ with strategy.scope():
                 "test_acc": test_accuracy.result(),
 
             })
-            train_loss.reset_states()
+            # train_loss.reset_states()
             test_loss.reset_states()
             train_accuracy.reset_states()
             test_accuracy.reset_states()

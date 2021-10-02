@@ -563,6 +563,54 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     return model
 
 
+def latten_transformer_attention_func(latten_array, projection_dim, num_multi_head,
+                                      num_transformer_block, ffn_units, dropout, stochastic_depth=False, dpr=None):
+    '''
+    Args:
+        Lattent_array: (Latten Dimension, projection_dim) is output from "Cross attention module"
+        num_multi_heads: number multi-head attention for handle multiple part inputs --> Concatenate at the end
+        num_transformer_block:  Stack multi-attention heads module multiple time on top each other 
+        ffn_units: MLP model procesing output from attention module (list Units for multi layer - single number for 1 layer)
+
+        dropout: dropout rate neuron unit of MLP model
+
+    return
+        Attention Encoder model -> output of self-attention model (Size output == Size Cross Attention Input)
+
+    '''
+
+    # Input of transformer (N)--> quadratic O(N*N)
+    # Input shape=[1, latent_dim, projection_dim]
+    x0 = latten_array
+    # stack multiple attention encoder block
+    for i_ in range(num_transformer_block):
+        # x = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x0)
+        x = LayerNormalization(epsilon=1e-6)(x0)
+        # create multi-head attention
+        # attention_axes=None attention over all axes
+        multi_head_out = tf.keras.layers.MultiHeadAttention(num_heads=num_multi_head,
+                                                            key_dim=projection_dim, dropout=dropout)(x, x)
+
+        if stochastic_depth:
+            multi_head_out = stochasticDepth(dpr[i_])(multi_head_out)
+        # adding skip connection (Between multi head previous layernorm --> Norm again)
+
+        x1 = tf.keras.layers.Add()([multi_head_out, x])
+        # x2 = tf.keras.layers.LayerNormalization(epsilon=1e-6)(x1)
+        x2 = LayerNormalization(epsilon=1e-6)(x1)
+        # Apply Feed forward network
+        x3 = create_ffn(units_neuron=ffn_units, dropout_rate=dropout)
+
+        if stochastic_depth:
+            x3 = stochasticDepth(dpr[i_])(x3)
+        x3 = x3(x2)
+
+        # Adding skip connection (betwen Layersnorm and ffn_output)
+        x0 = tf.keras.layers.Add()([x3, x2])
+
+    return x0
+
+
 def VIT_attention_Module_v1_design(inputs, i_, num_multi_head,
                                    ffn_units, dropout, projection_dim, stochastic_depth=False, dpr=None):
     '''
@@ -925,10 +973,10 @@ def Conv_Perceiver_architecture_func(input_shape, num_class,
         patches_sequence_out += embedded_position
 
     # Initialize the Latten Array (The Bug Here)
-    initializer_ = tf.keras.initializers.RandomNormal(mean=0, stdev=1)
+    initializer_ = tf.keras.initializers.RandomNormal(mean=0, stddev=1)
     latten_array = initializer_(shape=(lattent_dim, projection_dim))
     latten_array_input = tf.expand_dims(latten_array, 0)
-    latten_array_input = tf.keras.Input(shape=(1, lattent_dim, projection_dim))
+    #latten_array_input = tf.keras.Input(shape=(1, lattent_dim, projection_dim))
 
     # calculate the stochastic Depth probability
     if stochastic_depth:
@@ -937,40 +985,110 @@ def Conv_Perceiver_architecture_func(input_shape, num_class,
 
     for i in range(num_model_layer):
         # Cross Attention Model
-        lattent_array = cross_attention_module_func(
+        latten_array_input = cross_attention_module_func(
             latten_array_input, patches_sequence_out, projection_dim, ffn_units, dropout)
 
-        # Self-- Attention model
-        x = tf.keras.layers.LayerNormalization(
-            epsilon=1e-5)(lattent_array)
+        for i_ in range(num_transformer_blocks):
+            # Self-- Attention model
+            x = tf.keras.layers.LayerNormalization(
+                epsilon=1e-5)(latten_array_input)
 
-        # Creat the attention head layer[Scaling model Here]
-        attention_out = tf.keras.layers.MultiHeadAttention(
-            num_heads=num_multi_heads, key_dim=projection_dim, dropout=0.1)(x, x)
-        # adding skip connection
-        if stochastic_depth:
-            attention_out = stochasticDepth(dpr[i])(attention_out)
+            # Creat the attention head layer[Scaling model Here]
+            attention_out = tf.keras.layers.MultiHeadAttention(
+                num_heads=num_multi_heads, key_dim=projection_dim, dropout=0.1)(x, x)
+            # adding skip connection
+            if stochastic_depth:
+                attention_out = stochasticDepth(dpr[i])(attention_out)
 
-        x2 = tf.keras.layers.Add()([attention_out, lattent_array])
-        # Layer normalization 2.
-        x3 = tf.keras.layers.LayerNormalization(epsilon=1e-5)(x2)
-        # adding Poitwise Feed forward net
-        x4 = MLP_ffn_v1_design(
-            x3, hidden_units=ffn_units, dropout_rate=dropout)
+            x2 = tf.keras.layers.Add()([attention_out, latten_array_input])
+            # Layer normalization 2.
+            x3 = tf.keras.layers.LayerNormalization(epsilon=1e-5)(x2)
+            # adding Poitwise Feed forward net
+            x4 = MLP_ffn_v1_design(
+                x3, hidden_units=ffn_units, dropout_rate=dropout)
 
-        if stochastic_depth:
-            x4 = stochasticDepth(dpr[i])(x4)
-        # Skip connection 2.
-        patches_sequence_out = tf.keras.layers.Add()([x4, x2])
+            if stochastic_depth:
+                x4 = stochasticDepth(dpr[i])(x4)
+            # Skip connection 2.
+            x5 = tf.keras.layers.Add()([x4, x2])
 
-        latten_array_input = patches_sequence_out
+            latten_array_input = x5
+
         # End Self attation Model
 
     if pooling_mode == "1D":
         representation = tf.keras.layers.GlobalAveragePooling1D()(latten_array_input)
     elif pooling_mode == "sequence_pooling":
         representation = tf.keras.layers.LayerNormalization(
-            epsilon=1e-5)(patches_sequence_out)
+            epsilon=1e-5)(latten_array_input)
+        attention_weights = tf.nn.softmax(
+            tf.keras.layers.Dense(1)(representation), axis=1)
+        weighted_representation = tf.matmul(
+            attention_weights, representation, transpose_a=True
+        )
+        representation = tf.squeeze(weighted_representation, -2)
+
+    if include_top:
+        print('using top')
+        # clasify output
+        representation = tf.keras.layers.Dense(num_class)(representation)
+
+    model = tf.keras.Model(inputs=inputs, outputs=representation)
+    return model
+
+
+def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
+                                        IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
+                                        # Cross attention Module
+                                        lattent_dim, projection_dim,
+                                        # For the Latten transformer and Model depth
+                                        num_multi_heads, num_transformer_blocks, num_model_layer,
+                                        # For model MLP (Pointwise Linear feed forward model)
+                                        ffn_units, dropout,  classifier_units,
+                                        # Configure the Rep output, addittion stochastic dropout
+                                        include_top=False, pooling_mode="1D", stochastic_depth=False, stochastic_depth_rate=0.1):
+
+    # Define Input for the model
+    inputs = tf.keras.layers.Input(input_shape)
+    # Conv patches unroll
+    patches_sequence = conv_unroll_patches_position_encoded(
+        num_conv_layers, spatial2project_dim)
+    patches_sequence_out = patches_sequence(inputs)
+
+    if conv_position_embedding:
+        embedded_position, sequence_patches_dim = patches_sequence.conv_content_position_encoding(
+            IMG_SIZE)
+        # patches_sequence_out = tf.math.add(
+        #     patches_sequence_out, embedded_position)
+        patches_sequence_out += embedded_position
+
+    # Initialize the Latten Array (The Bug Here)
+    initializer_ = tf.keras.initializers.RandomNormal(mean=0, stddev=1)
+    latten_array = initializer_(shape=(lattent_dim, projection_dim))
+    latten_array_input = tf.expand_dims(latten_array, 0)
+    #latten_array_input = tf.keras.Input(shape=(1, lattent_dim, projection_dim))
+
+    # calculate the stochastic Depth probability
+    dpr = None
+    if stochastic_depth:
+        dpr = [x for x in np.linspace(
+            0, stochastic_depth_rate, num_transformer_blocks)]
+
+    for i in range(num_model_layer):
+        # Cross Attention Model
+        latten_array_input = cross_attention_module_func(
+            latten_array_input, patches_sequence_out, projection_dim, ffn_units, dropout)
+
+        latten_array_input = latten_transformer_attention_func(latten_array_input, projection_dim, num_multi_heads,
+                                                               num_transformer_blocks, ffn_units, dropout, stochastic_depth, dpr=dpr)
+
+        # End Self attation Model
+    print("this is latten_array_output at the self-attention layer",latten_array_input.shape )
+    if pooling_mode == "1D":
+        representation = tf.keras.layers.GlobalAveragePooling1D()(latten_array_input)
+    elif pooling_mode == "sequence_pooling":
+        representation = tf.keras.layers.LayerNormalization(
+            epsilon=1e-5)(latten_array_input)
         attention_weights = tf.nn.softmax(
             tf.keras.layers.Dense(1)(representation), axis=1)
         weighted_representation = tf.matmul(

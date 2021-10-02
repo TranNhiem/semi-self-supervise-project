@@ -6,7 +6,7 @@ from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
 from tensorflow.python.keras.backend import dropout, learning_phase
 import tensorflow_addons as tfa
-from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func, convnet_perceiver_architecture
+from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func_v1
 
 import argparse
 from tensorflow.keras.optimizers import schedules
@@ -29,7 +29,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -56,6 +56,7 @@ conv_position_embedding = True
 latten_dim = 128  # size of latten array --> (N)
 projection_dim = 256
 dropout_rate = 0.2
+stochastic_depth = False
 stochastic_depth_rate = 0.1
 # Learnable array
 # (NxD) #--> OUTPUT( [Q, K][Conetent information, positional])
@@ -95,36 +96,16 @@ with strategy.scope():
         data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
         num_images = data.num_train_images
 
-        def dataset_fn(input_context):
-            batch_size = input_context.get_per_replica_batch_size(
-                global_BATCH_SIZE)
-            train_ds, test_ds = data.supervised_train_ds_test_ds()
-            train_ds = (train_ds.shard(input_context.num_input_pipelines,
-                                       input_context.input_pipeline_id)
-                        .batch(batch_size)
-                        .prefetch(Auto)
-                        )
-            test_ds = (test_ds.shard(input_context.num_input_pipelines,
-                                     input_context.input_pipeline_id)
-                       .batch(batch_size)
-                       .prefetch(Auto)
-                       )
-
-            return train_ds, test_ds
-        # train_dataset=strategy.experimental_distribute_dataset(train_dataset)
-        # train_ds, test_ds = strategy.experimental_distribute_datasets_from_function(
-        #     lambda input_context: dataset_fn(input_context))
-
         train_ds, test_ds = data.supervised_train_ds_test_ds()
         train_ds = strategy.experimental_distribute_dataset(train_ds)
         test_ds = strategy.experimental_distribute_dataset(test_ds)
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
-        conv_perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
-                                                                latten_dim, projection_dim, num_multi_heads,
-                                                                NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                                classification_head, include_top=include_top, pooling_mode="sequence_pooling",
-                                                                stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
+        conv_perceiver_model = Conv_Perceiver_architecture_func_v1(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
+                                                                   latten_dim, projection_dim, num_multi_heads,
+                                                                   NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+                                                                   classification_head, include_top=include_top, pooling_mode="sequence_pooling",
+                                                                   stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))
         conv_perceiver_model.summary()
@@ -159,14 +140,14 @@ with strategy.scope():
 
         # Model Hyperparameter Defined Primary
         # 1. Define init
-        init_lr = 1e-3
-        weight_decay = 1e-6
-        # # 2. Schedule init
-        # optimizer = tfa.optimizers.LAMB(
-        #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
+        # init_lr = 1e-3
+        # weight_decay = 1e-6
+        # # # 2. Schedule init
+        # # optimizer = tfa.optimizers.LAMB(
+        # #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
 
-        optimizer = tfa.optimizers.SGDW(
-            learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay)
+        # optimizer = tfa.optimizers.SGDW(
+        #     learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay)
 
         # optimizer = tfa.optimizers.AdamW(
         #     learning_rate=init_lr, weight_decay=weight_decay)
@@ -175,13 +156,13 @@ with strategy.scope():
         # Custom Define Hyperparameter
         ################################
         # 3. Schedule CosineDecay warmup
-        # base_lr = 0.3
-        # lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
-        # # optimizers = get_optimizer(lr_rate)
-        # # AdamW = optimizers.optimizer_weight_decay(args)
-        # # Borrow testing
-        # optimizer = tfa.optimizers.AdamW(
-        #     learning_rate=lr_rate, weight_decay=args.weight_decay)
+        base_lr = 0.003
+        lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
+        # optimizers = get_optimizer(lr_rate)
+        # AdamW = optimizers.optimizer_weight_decay(args)
+        # Borrow testing
+        optimizer = tfa.optimizers.AdamW(
+            learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         # # model compile
         # conv_perceiver_model.compile(optimizer=optimizer,
@@ -231,7 +212,6 @@ with strategy.scope():
                 zip(grads, conv_perceiver_model.trainable_variables))
 
             train_accuracy.update_state(y, y_pred_logits)
-            train_loss.update_state(loss)
 
             return loss
 
@@ -273,8 +253,8 @@ with strategy.scope():
             template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                         "Test Accuracy: {}")
             print(template.format(epoch_id+1, train_loss,
-                                  train_accuracy.result()*100, test_loss.result(),
-                                  test_accuracy.result()*100))
+                                  train_accuracy.result(), test_loss.result(),
+                                  test_accuracy.result()))
 
             wandb.log({
                 "epochs": epoch_id,

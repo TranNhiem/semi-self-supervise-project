@@ -1077,6 +1077,7 @@ def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
     latten_array = initializer_(
         shape=(lattent_dim, projection_dim))
     latten_array = tf.expand_dims(latten_array, 0)
+
     latten_array_input = tf.Variable(
         initial_value=latten_array, trainable=True, shape=(1, lattent_dim, projection_dim))
 

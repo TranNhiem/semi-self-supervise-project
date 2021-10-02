@@ -1380,12 +1380,12 @@ def conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2
         patches_sequence_out = tf.keras.layers.Add()([x4, x2])
 
     if pooling_mode == "1D":
-        representation = layers.GlobalAveragePooling1D()(patches_sequence_out)
+        representation = tf.keras.layers.GlobalAveragePooling1D()(patches_sequence_out)
     elif pooling_mode == "sequence_pooling":
-        representation = layers.LayerNormalization(
-            epsilon=1e-5)(encoded_patches)
+        representation = tf.keras.layers.LayerNormalization(
+            epsilon=1e-5)(patches_sequence_out)
         attention_weights = tf.nn.softmax(
-            layers.Dense(1)(representation), axis=1)
+            tf.keras.layers.Dense(1)(representation), axis=1)
         weighted_representation = tf.matmul(
             attention_weights, representation, transpose_a=True
         )
@@ -1396,5 +1396,5 @@ def conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2
         # clasify output
         representation = tf.keras.layers.Dense(num_class)(representation)
 
-    model = keras.Model(inputs=inputs, outputs=representation)
+    model = tf.keras.Model(inputs=inputs, outputs=representation)
     return model

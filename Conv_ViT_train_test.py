@@ -218,9 +218,9 @@ with strategy.scope():
 
         def distributed_loss(lables, predictions):
             # each GPU loss per_replica batch loss
-            per_example_loss = loss_object(labels, predictions)
+            per_example_loss = loss_object(lables, predictions)
             # total sum loss //Global batch_size
-            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=GLOBAL_BATCH_SIZE)
+            return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_BATCH_SIZE)
 
         test_loss = tf.keras.metrics.Mean(name='test_loss')
         train_loss = tf.keras.metrics.Mean(name="train_loss")
@@ -230,7 +230,8 @@ with strategy.scope():
             name='test_accuracy')
 
         @tf.function
-        def train_step_evaluation(x, y):  # (bs, 32, 32, 3), (bs)
+        def train_step(x, y):  # (bs, 32, 32, 3), (bs)
+
             # Forward pass
             with tf.GradientTape() as tape:
                 # (bs, 512)
@@ -242,7 +243,7 @@ with strategy.scope():
                 zip(grads, conv_VIT_model.trainable_variables))
 
             train_accuracy.update_state(y, y_pred_logits)
-            train_loss.update(loss)
+            train_loss.update_state(loss)
 
             return loss
 
@@ -259,7 +260,7 @@ with strategy.scope():
         @ tf.function
         def distributed_train_step(ds_one, ds_two):
             per_replica_losses = strategy.run(
-                train_step_evaluation, args=(ds_one, ds_two))
+                train_step, args=(ds_one, ds_two))
             return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
                                    axis=None)
 
@@ -270,19 +271,20 @@ with strategy.scope():
         for epoch_id in range(EPOCHS):
             total_loss = 0.0
             num_batches = 0
-            for train_x, train_y in enumerate(train_ds):
+            for _, (train_x, train_y) in enumerate(train_ds):
+
                 total_loss += distributed_train_step(train_x, train_y)
                 num_batches += 1
             train_loss = total_loss/num_batches
 
-            for test_x, test_y in enumerate(test_ds):
+            for _, (test_x, test_y) in enumerate(test_ds):
                 distributed_test_step(test_x, test_y)
             if epoch_id % 10 == 0:
                 checkpoint.save(checkpoint_prefix)
 
             template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                         "Test Accuracy: {}")
-            print(template.format(epoch+1, train_loss,
+            print(template.format(epoch_id+1, train_loss,
                                   train_accuracy.result()*100, test_loss.result(),
                                   test_accuracy.result()*100))
 

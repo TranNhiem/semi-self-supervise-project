@@ -1,4 +1,5 @@
 import wandb
+import os
 from utils.args import parse_args
 from Data_utils.datasets import SEED
 from Data_utils.datasets import CIFAR100_dataset
@@ -270,7 +271,7 @@ with strategy.scope():
             total_loss = 0.0
             num_batches = 0
             for train_x, train_y in enumerate(train_ds):
-                totla_loss += distributed_train_step(train_x, train_y)
+                total_loss += distributed_train_step(train_x, train_y)
                 num_batches += 1
             train_loss = total_loss/num_batches
 

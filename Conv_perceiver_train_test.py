@@ -20,9 +20,9 @@ checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 wandb.login()
 
 include_top = True
-# if include_top:
-#     # tf.config.experimental_run_functions_eagerly(True)
-#     tf.config.run_functions_eagerly(True)
+if include_top:
+    # tf.config.experimental_run_functions_eagerly(True)
+    tf.config.run_functions_eagerly(True)
 
 
 # Setting GPUs
@@ -30,7 +30,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 

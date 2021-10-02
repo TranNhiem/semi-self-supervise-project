@@ -193,15 +193,39 @@ with strategy.scope():
             learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         # model compile
-        conv_VIT_model.compile(optimizer=optimizer,
-                               loss=tf.keras.losses.CategoricalCrossentropy(),
-                               metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
-                                        tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
+        # conv_VIT_model.compile(optimizer=optimizer,
+        #                        loss=tf.keras.losses.CategoricalCrossentropy(),
+        #                        metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
+        #                                 tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
 
         # MODEL TRAINING
 
-        conv_VIT_model.fit(train_ds, epochs=EPOCHS,
-                           validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
+        # conv_VIT_model.fit(train_ds, epochs=EPOCHS,
+        #                    validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
+
+        @tf.function
+        def train_step_evaluation(x, y):  # (bs, 32, 32, 3), (bs)
+
+            # Forward pass
+            with tf.GradientTape() as tape:
+                # (bs, 512)
+                y_pred_logits = conv_VIT_model(x)  # (bs, 10)
+                loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(
+                    labels=y, logits=y_pred_logits))
+
+            # Backward pass
+            grads = tape.gradient(loss, conv_VIT_model.trainable_variables)
+            optimizer.apply_gradients(
+                zip(grads, conv_VIT_model.trainable_variables))
+
+            return loss
+        batches_per_epochs = num_images/BATCH_SIZE
+        for epoch_id in range(EPOCHS):
+
+            for batches in range(int(batches_per_epochs))
+            x = next(iter(train_ds))
+            y = next(iter(test_ds))
+            loss = train_step_evaluation(x, y)
 
     if __name__ == '__main__':
 

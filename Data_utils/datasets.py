@@ -28,11 +28,11 @@ class CIFAR100_dataset():
         self.y_test = tf.cast(tf.squeeze(self.y_test), tf.float32)
         self.IMG_SIZE = IMG_SIZE
         self.BATCH_SIZE = GLOBAL_BATCH_SIZE
-        self.y_train = tf.keras.utils.to_categorical(
-            self.y_train, num_classes=100)
-        # print(self.y_train[1:10])
-        self.y_test = tf.keras.utils.to_categorical(
-            self.y_test, num_classes=100)
+        # self.y_train = tf.keras.utils.to_categorical(
+        #     self.y_train, num_classes=100)
+        # # print(self.y_train[1:10])
+        # self.y_test = tf.keras.utils.to_categorical(
+        #     self.y_test, num_classes=100)
 
         self.test_ds = (tf.data.Dataset.from_tensor_slices((self.x_test, self.y_test))
                         .shuffle(self.BATCH_SIZE * 100)

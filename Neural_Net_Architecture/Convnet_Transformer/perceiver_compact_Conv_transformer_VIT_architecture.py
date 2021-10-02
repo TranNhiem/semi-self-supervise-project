@@ -789,10 +789,10 @@ class convnet_perceiver_architecture(tf.keras.Model):
         self.latent_transformer = latten_transformer_attention(self.lattent_dim, self.projection_dim, self.num_multi_heads,
                                                                self.num_transformer_block, self.ffn_units, self.dropout, stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
-        # if self.pooling_mode == "1D":
-        #     self.output_pooling = tf.keras.layers.GlobalAveragePooling1D()
-        # elif self.pooling_mode == "sequence_pooling":
-        #     self.output_pooling = sequence_pooling()
+        if self.pooling_mode == "1D":
+            self.output_pooling = tf.keras.layers.GlobalAveragePooling1D()
+        elif self.pooling_mode == "sequence_pooling":
+            self.output_pooling = sequence_pooling()
 
         # else:
         #     raise ValueError("Not supported pooling mode")
@@ -835,16 +835,16 @@ class convnet_perceiver_architecture(tf.keras.Model):
             cross_attention_input["latent_array"] = latent_array
 
         # Applying Global Average_pooling to generate [Batch_size, projection_dim] representation
-        # representation = self.output_pooling(
-        #     latent_array)
-        representation = tf.keras.layers.LayerNormalization(
-            epsilon=1e-5)(latent_array)
-        attention_weights = tf.nn.softmax(
-            tf.keras.layers.Dense(1)(representation), axis=1)
-        weighted_representation = tf.matmul(
-            attention_weights, representation, transpose_a=True
-        )
-        representation = tf.squeeze(weighted_representation, -2)
+        representation = self.output_pooling(
+            latent_array)
+        # representation = tf.keras.layers.LayerNormalization(
+        #     epsilon=1e-5)(latent_array)
+        # attention_weights = tf.nn.softmax(
+        #     tf.keras.layers.Dense(1)(representation), axis=1)
+        # weighted_representation = tf.matmul(
+        #     attention_weights, representation, transpose_a=True
+        # )
+        # representation = tf.squeeze(weighted_representation, -2)
 
         if self.include_top == True:
             representation = self.classification_head(representation)

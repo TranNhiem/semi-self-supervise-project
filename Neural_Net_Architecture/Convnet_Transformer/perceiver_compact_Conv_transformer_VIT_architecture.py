@@ -1269,8 +1269,8 @@ class conv_transform_VIT_V1_(tf.keras.Model):
 # Building Architecture By Function
 
 
-def conv_transform_VIT_V1_func(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
-                               transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
+def conv_VIT_V1_func_(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
+                     transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
 
     input = tf.keras.layers.Input(input_shape)
     # Conv patches unroll
@@ -1328,4 +1328,73 @@ def conv_transform_VIT_V1_func(input_shape, num_class, image_size, num_conv_laye
 
     model = tf.keras.Model(inputs=input, outputs=representation_out)
 
+    return model
+
+
+def conv_VIT_V1_func(num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
+                     num_transformer_blocks, num_head_attention, ffn_units, classification_unit,
+                     dropout, stochastic_depth=False, stochastic_depth_rate=0.1,
+                     include_top='False', pooling_mode="1D"):
+
+    # Define Input for the model
+    inputs = tf.keras.layers.Input(input_shape)
+    # Conv patches unroll
+    patches_sequence = conv_unroll_patches_position_encoded(
+        num_conv_layers, spatial2project_dim)
+    patches_sequence_out = patches_sequence(inputs)
+
+    if embedding_option:
+        embedded_position, sequence_patches_dim = patches_sequence.conv_content_position_encoding(
+            IMG_SIZE)
+        # patches_sequence_out = tf.math.add(
+        #     patches_sequence_out, embedded_position)
+        patches_sequence_out += embedded_position
+
+    # calculate the stochastic Depth probability
+    if stochastic_depth:
+        dpr = [x for x in np.linspace(
+            0, stochastic_depth_rate, num_transformer_blocks)]
+
+    for i in range(num_transformer_blocks):
+
+        x = tf.keras.layers.LayerNormalization(
+            epsilon=1e-5)(patches_sequence_out)
+
+        # Creat the attention head layer[Scaling model Here]
+        attention_out = tf.keras.layers.MultiHeadAttention(
+            num_heads=num_head_attention, key_dim=projection_dim, dropout=0.1)(x, x)
+        # adding skip connection
+        if stochastic_depth:
+            attention_out = stochasticDepth(dpr[i])(attention_out)
+
+        x2 = tf.keras.layers.Add()([attention_out, patches_sequence_out])
+        # Layer normalization 2.
+        x3 = tf.keras.layers.LayerNormalization(epsilon=1e-5)(x2)
+        # adding Poitwise Feed forward net
+        x4 = MLP_ffn_v1_design(
+            x3, hidden_units=ffn_units, dropout_rate=dropout)
+
+        if stochastic_depth:
+            x4 = stochasticDepth(dpr[i])(x4)
+        # Skip connection 2.
+        patches_sequence_out = tf.keras.layers.Add()([x4, x2])
+
+    if pooling_mode == "1D":
+        representation = layers.GlobalAveragePooling1D()(patches_sequence_out)
+    elif pooling_mode == "sequence_pooling":
+        representation = layers.LayerNormalization(
+            epsilon=1e-5)(encoded_patches)
+        attention_weights = tf.nn.softmax(
+            layers.Dense(1)(representation), axis=1)
+        weighted_representation = tf.matmul(
+            attention_weights, representation, transpose_a=True
+        )
+        representation = tf.squeeze(weighted_representation, -2)
+
+    if include_top:
+        print('using top')
+        # clasify output
+        representation = tf.keras.layers.Dense(num_class)(representation)
+
+    model = keras.Model(inputs=inputs, outputs=representation)
     return model

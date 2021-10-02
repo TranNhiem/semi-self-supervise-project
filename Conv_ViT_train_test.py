@@ -189,7 +189,7 @@ with strategy.scope():
         # Custom Define Hyperparameter
         ################################
         # 3. Schedule CosineDecay warmup
-        base_lr = 0.3
+        base_lr = 0.003
         lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
         # optimizers = get_optimizer(lr_rate)
         # AdamW = optimizers.optimizer_weight_decay(args)
@@ -285,8 +285,8 @@ with strategy.scope():
             template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                         "Test Accuracy: {}")
             print(template.format(epoch_id+1, train_losses,
-                                  train_accuracy.result()*100, test_loss.result(),
-                                  test_accuracy.result()*100))
+                                  train_accuracy.result(), test_loss.result(),
+                                  test_accuracy.result()))
 
             wandb.log({
                 "epochs": epoch_id,
@@ -294,6 +294,7 @@ with strategy.scope():
                 "train_acc": train_accuracy.result(),
                 "test_loss": test_loss.result(),
                 "test_acc": test_accuracy.result(),
+                "learning_rate": lr_rate
 
             })
             # train_loss.reset_states()

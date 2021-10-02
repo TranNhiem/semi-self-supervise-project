@@ -670,7 +670,7 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
     return model
 
 
-def cross_attention_module_func(lattent_array, data_array, ffn_units, dropout):
+def cross_attention_module_func(lattent_array, data_array, projection_dim, ffn_units, dropout):
     '''
     Args:
         latten_array: Reduce dimension with Projection_dim
@@ -899,7 +899,7 @@ class convnet_perceiver_architecture(tf.keras.Model):
         return representation
 
 
-def Conv_Perceiver_architecture_func(input_shape,
+def Conv_Perceiver_architecture_func(input_shape, num_class,
                                      IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
                                      # Cross attention Module
                                      lattent_dim, projection_dim,
@@ -917,7 +917,7 @@ def Conv_Perceiver_architecture_func(input_shape,
         num_conv_layers, spatial2project_dim)
     patches_sequence_out = patches_sequence(inputs)
 
-    if embedding_option:
+    if conv_position_embedding:
         embedded_position, sequence_patches_dim = patches_sequence.conv_content_position_encoding(
             IMG_SIZE)
         # patches_sequence_out = tf.math.add(
@@ -938,7 +938,7 @@ def Conv_Perceiver_architecture_func(input_shape,
     for i in range(num_model_layer):
         # Cross Attention Model
         lattent_array = cross_attention_module_func(
-            latten_array_input, patches_sequence_out, ffn_units, dropout)
+            latten_array_input, patches_sequence_out, projection_dim, ffn_units, dropout)
 
         # Self-- Attention model
         x = tf.keras.layers.LayerNormalization(

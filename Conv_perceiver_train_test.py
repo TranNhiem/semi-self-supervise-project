@@ -6,7 +6,7 @@ from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
 from tensorflow.python.keras.backend import dropout, learning_phase
 import tensorflow_addons as tfa
-from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func_v1
+from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func
 
 import argparse
 from tensorflow.keras.optimizers import schedules
@@ -53,7 +53,7 @@ num_class = 100
 num_conv_layers = 2  # for unroll patches -- Overlap
 spatial2projection_dim = [128, 256]  # This equivalent to # filters
 conv_position_embedding = True
-latten_dim = 128  # size of latten array --> (N)
+latten_dim = 256  # size of latten array --> (N)
 projection_dim = 256
 dropout_rate = 0.2
 stochastic_depth = False
@@ -101,11 +101,11 @@ with strategy.scope():
         test_ds = strategy.experimental_distribute_dataset(test_ds)
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
-        conv_perceiver_model = Conv_Perceiver_architecture_func_v1(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
-                                                                   latten_dim, projection_dim, num_multi_heads,
-                                                                   NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                                   classification_head, include_top=include_top, pooling_mode="sequence_pooling",
-                                                                   stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
+        conv_perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
+                                                                latten_dim, projection_dim, num_multi_heads,
+                                                                NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+                                                                classification_head, include_top=include_top, pooling_mode="1D",
+                                                                stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))
         conv_perceiver_model.summary()
@@ -161,7 +161,7 @@ with strategy.scope():
         # optimizers = get_optimizer(lr_rate)
         # AdamW = optimizers.optimizer_weight_decay(args)
         # Borrow testing
-        optimizer = tfa.optimizers.AdamW(
+        optimizer = tfa.optimizers.SGDW(
             learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         # # model compile

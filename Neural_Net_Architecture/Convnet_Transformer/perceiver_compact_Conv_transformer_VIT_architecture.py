@@ -31,6 +31,7 @@ import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from tensorflow.keras.layers import LayerNormalization
+from tensorflow.python.ops.variables import trainable_variables
 
 ####################################################################################
 '''Extract Patches Unroll the Image'''
@@ -977,6 +978,7 @@ def Conv_Perceiver_architecture_func(input_shape, num_class,
         patches_sequence_out += embedded_position
 
     # Initialize the Latten Array (The Bug Here)
+
     initializer_ = tf.keras.initializers.RandomNormal(mean=0, stddev=1)
     latten_array = initializer_(shape=(lattent_dim, projection_dim))
     latten_array_input = tf.expand_dims(latten_array, 0)
@@ -1069,8 +1071,10 @@ def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
         patches_sequence_out += embedded_position
 
     # Initialize the Latten Array (The Bug Here)
-    initializer_ = tf.keras.initializers.RandomNormal(mean=0, stddev=1)
-    latten_array = initializer_(shape=(lattent_dim, projection_dim))
+    initializer_ = tf.keras.initializers.RandomNormal(
+        mean=0, stddev=1)
+    latten_array = initializer_(
+        shape=(lattent_dim, projection_dim))
     latten_array_input = tf.expand_dims(latten_array, 0)
     #latten_array_input = tf.keras.Input(shape=(1, lattent_dim, projection_dim))
 

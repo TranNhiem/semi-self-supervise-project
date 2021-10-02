@@ -661,7 +661,15 @@ class perceiver_architecture_integ_regularize(tf.keras.Model):
         return representation
 
 
-def preceiver_architecture(patch_size, data_dim, lattent_dim, projection_dim, num_multi_heads,
+def preceiver_architecture(input_shape, num_class, patch_size, data_dim, lattent_dim, projection_dim, num_multi_heads,
                  num_transformer_block, ffn_units, dropout, num_model_layer, classifier_units,  
                  include_top=False, pooling_mode="1D", stochastic_depth=False, stochastic_depth_rate=0.1):
-
+        
+        # Define Input for the model
+        inputs = tf.keras.layers.Input(input_shape)
+        # create patching module
+        num_patches = patches(patch_size)
+        # # create patch embedding encoded (position, content information) data input (K, V)
+        patches_embedding = patch_content_position_encoding(data_dim, projection_dim)
+        num_patches+= patches_embedding
+        

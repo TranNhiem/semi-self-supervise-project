@@ -802,6 +802,8 @@ V0 --> Design Architecture
 
 '''
 
+# This model can Implement directly with Pooling 1D ERROR Sequence_pooling
+
 
 class convnet_perceiver_architecture(tf.keras.Model):
 
@@ -946,6 +948,8 @@ class convnet_perceiver_architecture(tf.keras.Model):
             representation = self.classification_head(representation)
         return representation
 
+# This model Design For Experiment
+
 
 def Conv_Perceiver_architecture_func(input_shape, num_class,
                                      IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
@@ -1036,6 +1040,8 @@ def Conv_Perceiver_architecture_func(input_shape, num_class,
     model = tf.keras.Model(inputs=inputs, outputs=representation)
     return model
 
+# This model official Implementation
+
 
 def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
                                         IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
@@ -1083,7 +1089,8 @@ def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
                                                                num_transformer_blocks, ffn_units, dropout, stochastic_depth, dpr=dpr)
 
         # End Self attation Model
-    print("this is latten_array_output at the self-attention layer",latten_array_input.shape )
+    print("this is latten_array_output at the self-attention layer",
+          latten_array_input.shape)
     if pooling_mode == "1D":
         representation = tf.keras.layers.GlobalAveragePooling1D()(latten_array_input)
     elif pooling_mode == "sequence_pooling":

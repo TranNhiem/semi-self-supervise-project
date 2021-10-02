@@ -64,7 +64,7 @@ stochastic_depth_rate = 0.1
 
 num_multi_heads = 8  # --> multhi Attention Module to processing inputs
 # Encoder -- Decoder are # --> Increasing block create deeper Transformer model
-NUM_TRANSFORMER_BLOCK = 4
+NUM_TRANSFORMER_BLOCK = 2
 # Corresponding with Depth of self-attention
 # Model depth stack multiple CrossAttention +self-trasnformer_Block
 NUM_MODEL_LAYERS = 2

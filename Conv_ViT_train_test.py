@@ -6,7 +6,8 @@ from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
 from tensorflow.python.keras.backend import dropout, learning_phase
 import tensorflow_addons as tfa
-from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import conv_transform_VIT, conv_transform_VIT_V1_
+# Noted in conv_transform_VIT_V1_model sequence 1D working well expecept Sequence Pooling has issue
+from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import conv_VIT_V1_func
 
 import argparse
 from tensorflow.keras.optimizers import schedules
@@ -124,12 +125,12 @@ with strategy.scope():
         #                                     include_top=include_top, pooling_mode="1D",
         #                                     )
 
-        conv_VIT_model = conv_transform_VIT_V1_(num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
-                                                NUM_TRANSFORMER_BLOCK, num_multi_heads,
-                                                FFN_layers_units, classification_unit, dropout_rate,
-                                                stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
-                                                include_top=include_top, pooling_mode="sequence_pooling",
-                                                )
+        conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+                                          NUM_TRANSFORMER_BLOCK, num_multi_heads,
+                                          FFN_layers_units, classification_unit, dropout_rate,
+                                          stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
+                                          include_top=include_top, pooling_mode="sequence_pooling",
+                                          )
 
         conv_VIT_model(tf.keras.Input((input_shape)))
         conv_VIT_model.summary()

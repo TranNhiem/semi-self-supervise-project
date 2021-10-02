@@ -1270,7 +1270,7 @@ class conv_transform_VIT_V1_(tf.keras.Model):
 
 
 def conv_VIT_V1_func_(input_shape, num_class, image_size, num_conv_layers, spatial2project_dim, embedding_option,
-                     transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
+                      transformer_blocks,  num_head_attention, projection_dim, ffn_units, stochastic_depth_rate, dropout, include_top):
 
     input = tf.keras.layers.Input(input_shape)
     # Conv patches unroll
@@ -1331,7 +1331,7 @@ def conv_VIT_V1_func_(input_shape, num_class, image_size, num_conv_layers, spati
     return model
 
 
-def conv_VIT_V1_func(num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
+def conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
                      num_transformer_blocks, num_head_attention, ffn_units, classification_unit,
                      dropout, stochastic_depth=False, stochastic_depth_rate=0.1,
                      include_top='False', pooling_mode="1D"):

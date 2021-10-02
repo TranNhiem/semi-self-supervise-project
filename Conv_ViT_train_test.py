@@ -31,7 +31,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[6:8], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -244,7 +244,6 @@ with strategy.scope():
                 zip(grads, conv_VIT_model.trainable_variables))
 
             train_accuracy.update_state(y, y_pred_logits)
-            train_loss.update_state(loss)
 
             return loss
 
@@ -276,8 +275,8 @@ with strategy.scope():
 
                 total_loss += distributed_train_step(train_x, train_y)
                 num_batches += 1
-            train_loss = total_loss/num_batches
-
+            train_losses = total_loss/num_batches
+            train_loss.update_state(train_losses)
             for _, (test_x, test_y) in enumerate(test_ds):
                 distributed_test_step(test_x, test_y)
             if epoch_id % 10 == 0:
@@ -285,10 +284,19 @@ with strategy.scope():
 
             template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                         "Test Accuracy: {}")
-            print(template.format(epoch_id+1, train_loss,
+            print(template.format(epoch_id+1, train_losses,
                                   train_accuracy.result()*100, test_loss.result(),
                                   test_accuracy.result()*100))
 
+            wandb.log({
+                "epochs": epoch_id,
+                "train_loss": train_losses,
+                "train_acc": train_accuracy.result(),
+                "test_loss": test_loss.result(),
+                "test_acc": test_accuracy.result(),
+
+            })
+            train_loss.reset_states()
             test_loss.reset_states()
             train_accuracy.reset_states()
             test_accuracy.reset_states()

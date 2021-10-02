@@ -31,7 +31,7 @@ def parse_args():
     parser.add_argument('-j', '--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
-    parser.add_argument('--train_batch_size', default=200, type=int,
+    parser.add_argument('--train_batch_size', default=250, type=int,
                         metavar='N',
                         help='mini-batch size (default: 256), this is the total '
                         'batch size of all GPUs on the current node when '

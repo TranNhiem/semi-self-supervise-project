@@ -6,7 +6,7 @@ from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
 from tensorflow.python.keras.backend import dropout, learning_phase
 import tensorflow_addons as tfa
-from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func
+from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import convnet_perceiver_architecture, Conv_Perceiver_architecture_func_v1
 
 import argparse
 from tensorflow.keras.optimizers import schedules
@@ -29,7 +29,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:4], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -51,12 +51,12 @@ num_class = 100
 # data_dim = num_patches
 
 num_conv_layers = 2  # for unroll patches -- Overlap
-spatial2projection_dim = [128, 256]  # This equivalent to # filters
+spatial2projection_dim = [256, 512]  # This equivalent to # filters
 conv_position_embedding = True
 latten_dim = 256  # size of latten array --> (N)
-projection_dim = 256
+projection_dim = 512
 dropout_rate = 0.2
-stochastic_depth = False
+stochastic_depth = True
 stochastic_depth_rate = 0.1
 # Learnable array
 # (NxD) #--> OUTPUT( [Q, K][Conetent information, positional])
@@ -64,14 +64,14 @@ stochastic_depth_rate = 0.1
 
 num_multi_heads = 8  # --> multhi Attention Module to processing inputs
 # Encoder -- Decoder are # --> Increasing block create deeper Transformer model
-NUM_TRANSFORMER_BLOCK = 2
+NUM_TRANSFORMER_BLOCK = 1
 # Corresponding with Depth of self-attention
 # Model depth stack multiple CrossAttention +self-trasnformer_Block
 NUM_MODEL_LAYERS = 2
 
 # 2 layer MLP Dense with number of Unit= pro_dim
 FFN_layers_units = [projection_dim, projection_dim]
-classification_head = [projection_dim, num_class]
+classification_head = [num_class]
 
 print(f"Image size: {IMG_SIZE} X {IMG_SIZE} = {IMG_SIZE ** 2}")
 # print(f"Patch size: {patch_size} X {patch_size} = {patch_size ** 2} ")
@@ -100,12 +100,19 @@ with strategy.scope():
         train_ds = strategy.experimental_distribute_dataset(train_ds)
         test_ds = strategy.experimental_distribute_dataset(test_ds)
         # Create model Architecutre
+
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
-        conv_perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
-                                                                latten_dim, projection_dim, num_multi_heads,
-                                                                NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                                classification_head, include_top=include_top, pooling_mode="1D",
-                                                                stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
+        # conv_perceiver_model = convnet_perceiver_architecture(IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
+        #                                                       latten_dim, projection_dim, num_multi_heads,
+        #                                                       NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+        #                                                       classification_head, include_top=include_top, pooling_mode="1D",
+        #                                                       stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
+
+        conv_perceiver_model = Conv_Perceiver_architecture_func_v1(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
+                                                                   latten_dim, projection_dim, num_multi_heads,
+                                                                   NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+                                                                   classification_head, include_top=include_top, pooling_mode="1D",
+                                                                   stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))
         conv_perceiver_model.summary()
@@ -131,8 +138,12 @@ with strategy.scope():
             "Batch_size": BATCH_SIZE_per_replica,
             "Learning_rate": "1e-3*Batch_size/512",
             "Optimizer": "AdamW",
+            "Model_Parameter": num_params_f,
             "SEED": SEED,
             "Loss type": "Cross_entropy_loss",
+            "Conv_Unroll_patches": num_conv_layers,
+            "Number_Attention_Heads, ": num_multi_heads,
+            "Num_Transformer_blocks": NUM_TRANSFORMER_BLOCK,
         }
 
         wandb.init(project="heuristic_attention_representation_learning",

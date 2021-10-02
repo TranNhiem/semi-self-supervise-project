@@ -917,8 +917,8 @@ class convnet_perceiver_architecture(tf.keras.Model):
             num_patches = tf.math.add(
                 num_patches, linear_position_patches)
 
-        print("Debug Covnet Unroll Patches Output",
-              num_patches.shape)
+        # print("Debug Covnet Unroll Patches Output",
+        #       num_patches.shape)
 
         # passing input to cross attention
         cross_attention_input = {"latent_array": tf.expand_dims(self.latent_array, 0),
@@ -1073,9 +1073,13 @@ def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
     # Initialize the Latten Array (The Bug Here)
     initializer_ = tf.keras.initializers.RandomNormal(
         mean=0, stddev=1)
+
     latten_array = initializer_(
         shape=(lattent_dim, projection_dim))
-    latten_array_input = tf.expand_dims(latten_array, 0)
+    latten_array = tf.expand_dims(latten_array, 0)
+    latten_array_input = tf.Variable(
+        initial_value=latten_array, trainable=True, shape=(1, lattent_dim, projection_dim))
+
     #latten_array_input = tf.keras.Input(shape=(1, lattent_dim, projection_dim))
 
     # calculate the stochastic Depth probability

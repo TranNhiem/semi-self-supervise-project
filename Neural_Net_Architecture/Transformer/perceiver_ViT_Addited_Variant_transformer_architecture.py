@@ -1,5 +1,5 @@
 import tensorflow as tf
-#from position_encoding_type import FourierPositionEncoding
+# from position_encoding_type import FourierPositionEncoding
 
 ####################################################################################
 '''DEFINE Hyperparameter Unroll the Image'''
@@ -63,8 +63,9 @@ def create_ffn(units_neuron, dropout_rate):
     ffn = tf.keras.Sequential(ffn_layers)
     return ffn
 
+
 def MLP_ffn_v1_design(x, hidden_units, dropout_rate):
-    
+
     for units in hidden_units:
         x = tf.keras.layers.Dense(units, activation=tf.nn.gelu)(x)
         x = tf.keras.layers.Dropout(dropout_rate)(x)
@@ -76,6 +77,7 @@ def MLP_ffn_v1_design(x, hidden_units, dropout_rate):
 ####################################################################################
 
 # Patches Extract
+
 
 class patches(tf.keras.layers.Layer):
     '''
@@ -121,9 +123,11 @@ class patches(tf.keras.layers.Layer):
 # Encoding Patches [Content and Position]
 # 1 LINEAR position encoding tf.keras.layers.Embeddeding
 # This position encoding is not learnable
+
+
 class patch_content_position_encoding(tf.keras.layers.Layer):
     '''
-    args: 
+    args:
         num_pathes: number_sequences patches unroll from image
         project-dim; the output of embedding layers: should be the same with latter array
     return
@@ -147,6 +151,7 @@ class patch_content_position_encoding(tf.keras.layers.Layer):
             positions), name="Encoding_patches")
         return encoding
 
+
 ####################################################################################
 '''-----Building Transformer Module----'''
 # 1. Convention attention module for encoder --- Decoder
@@ -158,24 +163,25 @@ class patch_content_position_encoding(tf.keras.layers.Layer):
 # 4. Distangle Attention Module (DeBERTA paper)
 ####################################################################################
 
-#***********************************************
-## Keras Functional Model for Preciever Model
-## Self-Attention &&& Cross-Attention
-#***********************************************
+# ***********************************************
+# Keras Functional Model for Preciever Model
+# Self-Attention &&& Cross-Attention
+# ***********************************************
 
 # 1 Convetion Attention Module
+
 
 def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
                                  num_transformer_block, ffn_units, dropout):
     '''
-    Args: 
-        take lattent_dim as dimension inputs, 
+    Args:
+        take lattent_dim as dimension inputs,
         num_multi_head: number multi-head attention for split inputs and feed into
         num_transformer_block: stack attention module multiple time
         ffn_units: number layers, number_units neuron
         dropout: dropout rate at the end of FFN- model
-    return 
-        Attention Encoder model 
+    return
+        Attention Encoder model
 
     '''
 
@@ -204,13 +210,14 @@ def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
     model = tf.keras.Model(inputs=inputs, outputs=x0)
     return model
 
+
 def latten_transformer_attention_stochastic_depth(lattent_dim, projection_dim, num_multi_head,
                                  num_transformer_block, ffn_units, dropout, stochastic_depth=False, dpr=None):
     '''
     Args:
         Lattent_dim: Latten Dimension is output from "Cross attention module"
         num_multi_heads: number multi-head attention for handle multiple part inputs --> Concatenate at the end
-        num_transformer_block:  Stack multi-attention heads module multiple time on top each other 
+        num_transformer_block:  Stack multi-attention heads module multiple time on top each other
         ffn_units: MLP model procesing output from attention module (list Units for multi layer - single number for 1 layer)
 
         dropout: dropout rate neuron unit of MLP model
@@ -256,13 +263,14 @@ def latten_transformer_attention_stochastic_depth(lattent_dim, projection_dim, n
 
 # 2 Cross Attention Module
 
+
 def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dropout):
     '''
-    Args: 
+    Args:
         latten_dim: Reduce dimension you expected to
         data_dim: unroll the image num_patchets * projection-dim
-        ffn_units: layers len(ffn_units), nurons= value of element inside 
-        dropout: percentages dropout the last layer FFN 
+        ffn_units: layers len(ffn_units), nurons= value of element inside
+        dropout: percentages dropout the last layer FFN
     '''
 
     # Cross input between Low dimention with high dimention --> low dimention {Language translation}
@@ -308,10 +316,10 @@ def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dro
     return model
 
 
-#***********************************************
-##  Function Model for Preciever Model
-## Self-Attention &&&& Cross- Attention 
-#***********************************************
+# ***********************************************
+# Function Model for Preciever Model
+# Self-Attention &&&& Cross- Attention
+# ***********************************************
 
 def latten_transformer_attention_func(latten_array, projection_dim, num_multi_head,
                                       num_transformer_block, ffn_units, dropout, stochastic_depth=False, dpr=None):
@@ -319,7 +327,7 @@ def latten_transformer_attention_func(latten_array, projection_dim, num_multi_he
     Args:
         Lattent_array: (Latten Dimension, projection_dim) is output from "Cross attention module"
         num_multi_heads: number multi-head attention for handle multiple part inputs --> Concatenate at the end
-        num_transformer_block:  Stack multi-attention heads module multiple time on top each other 
+        num_transformer_block:  Stack multi-attention heads module multiple time on top each other
         ffn_units: MLP model procesing output from attention module (list Units for multi layer - single number for 1 layer)
 
         dropout: dropout rate neuron unit of MLP model
@@ -366,10 +374,11 @@ def cross_attention_module_func(lattent_array, data_array, projection_dim, ffn_u
     Args:
         latten_array: Reduce dimension with Projection_dim
         data_array: Length unroll the image (num_patchets) 1xD sequence << (Original paper Using Width* High)
-        ffn_units: MLP model layers len(ffn_units), # neuron= value of element inside single integer 1 layer
+        # neuron= value of element inside single integer 1 layer
+        ffn_units: MLP model layers len(ffn_units),
         dropout: percentages neuron dropout in the last MLP layer
 
-    Return 
+    Return
         the output is metrix (M*N) N is the latten Dimension M is data_dim input Dimension
     '''
 
@@ -409,8 +418,6 @@ def cross_attention_module_func(lattent_array, data_array, projection_dim, ffn_u
     return lattent_array
 
 
-
-
 ####################################################################################
 '''-----Building Layer Regularization for Transformer----'''
 # 1. Stochastic Depth -- Layer Dropout
@@ -418,6 +425,8 @@ def cross_attention_module_func(lattent_array, data_array, projection_dim, ffn_u
 ####################################################################################
 
 # Stochastic Depth --> Layer Dropout
+
+
 class stochasticDepth(tf.keras.layers.Layer):
     def __init__(self, drop_layer, ):
         super(stochasticDepth, self).__init__()
@@ -447,6 +456,8 @@ class stochasticDepth(tf.keras.layers.Layer):
         return config
 
 # Sequence Pooling Mode for further processing information
+
+
 class sequence_pooling(tf.keras.layers.Layer):
 
     def __init__(self, ):
@@ -465,9 +476,6 @@ class sequence_pooling(tf.keras.layers.Layer):
         return weighted_representation
 
 
-
-
-
 ####################################################################################
 '''Perceviver Architecture'''
 ####################################################################################
@@ -477,7 +485,7 @@ class sequence_pooling(tf.keras.layers.Layer):
 # Q Generated from lattent array, K, V generated from the encoded image
 # data_dim will equal to number of patches after unrol the image.
 
-
+## The version 1 is Call for the using 1D sequence
 class perceiver_architecture(tf.keras.Model):
 
     def __init__(self, patch_size, data_dim, lattent_dim, projection_dim, num_multi_heads,
@@ -534,9 +542,9 @@ class perceiver_architecture(tf.keras.Model):
 
     def call(self, inputs):
         # Augmentation option --> self-supervised processing outside
-        #augmented= data_augmentation(inputs)
+        # augmented= data_augmentation(inputs)
         # this for training using tf.data.Dataset
-        #inputs, _ = inputs
+        # inputs, _ = inputs
         # create patches
         num_patches = self.num_patches(inputs)
 
@@ -563,11 +571,12 @@ class perceiver_architecture(tf.keras.Model):
             representation = self.classification_head(representation)
 
         return representation
+## The version 1 is Call for the using 1D sequence with Stochastic Depth
 class perceiver_architecture_integ_regularize(tf.keras.Model):
-    
+
     def __init__(self, patch_size, data_dim, lattent_dim, projection_dim, num_multi_heads,
-                 num_transformer_blocks, ffn_units, dropout, num_model_layer, classifier_units, 
-                 include_top=False, pooling_mode="1D", stochastic_depth=False,stochastic_depth_rate=0.1 ):
+                 num_transformer_blocks, ffn_units, dropout, num_model_layer, classifier_units,
+                 include_top=False, pooling_mode="1D", stochastic_depth=False, stochastic_depth_rate=0.1):
 
         self.patch_size = patch_size
         self.data_dim = data_dim  # num_patches* projection_dim
@@ -581,17 +590,15 @@ class perceiver_architecture_integ_regularize(tf.keras.Model):
         self.classifier_units = classifier_units
         self.include_top = include_top
         self.pooling_mode = pooling_mode
-        self.stochastic_depth=stochastic_depth
-        self.stochastic_depth_rate=stochastic_depth_rate
-        self.dpr=None
-        if stochastic_depth: 
-            self.dpr= [x for x in np.linspace(
+        self.stochastic_depth = stochastic_depth
+        self.stochastic_depth_rate = stochastic_depth_rate
+        self.dpr = None
+        if stochastic_depth:
+            self.dpr = [x for x in np.linspace(
                 0, stochastic_depth_rate, num_transformer_block)]
 
         super(perceiver_architecture, self).__init__(
             name="Perceiver_Architecture")
-
-
 
     def build(self, input_shape):
 
@@ -612,7 +619,7 @@ class perceiver_architecture_integ_regularize(tf.keras.Model):
 
         # Create Latten_transformer_Attention
         self.latent_transformer = latten_transformer_attention_stochastic_depth(self.lattent_dim, self.projection_dim, self.num_multi_heads,
-                                                            self.num_transformer_blocks, self.ffn_units, self.dropout, 
+                                                            self.num_transformer_blocks, self.ffn_units, self.dropout,
                                                             stochastic_depth=self.stochastic_depth, dpr=self.dpr)
 
         if self.pooling_mode == "1D":
@@ -630,9 +637,9 @@ class perceiver_architecture_integ_regularize(tf.keras.Model):
 
     def call(self, inputs):
         # Augmentation option --> self-supervised processing outside
-        #augmented= data_augmentation(inputs)
+        # augmented= data_augmentation(inputs)
         # this for training using tf.data.Dataset
-        #inputs, _ = inputs
+        # inputs, _ = inputs
         # create patches
         num_patches = self.num_patches(inputs)
 
@@ -660,16 +667,67 @@ class perceiver_architecture_integ_regularize(tf.keras.Model):
 
         return representation
 
-
 def preceiver_architecture(input_shape, num_class, patch_size, data_dim, lattent_dim, projection_dim, num_multi_heads,
-                 num_transformer_block, ffn_units, dropout, num_model_layer, classifier_units,  
+                 num_transformer_block, ffn_units, dropout, num_model_layer, classifier_units,
                  include_top=False, pooling_mode="1D", stochastic_depth=False, stochastic_depth_rate=0.1):
-        
+
         # Define Input for the model
         inputs = tf.keras.layers.Input(input_shape)
+
+
         # create patching module
         num_patches = patches(patch_size)
+        patches_unroll=num_patches(inputs)
+
         # # create patch embedding encoded (position, content information) data input (K, V)
-        patches_embedding = patch_content_position_encoding(data_dim, projection_dim)
-        num_patches+= patches_embedding
-        
+        patches_embedding = patch_content_position_encoding(
+            data_dim, projection_dim)
+        pathces_position_encoded=patches_embedding(patches_unroll)
+        patches_unroll += pathces_position_encoded
+
+        # Initialize the Latten Array (The Bug Here)
+        initializer_ = tf.keras.initializers.RandomNormal(
+            mean=0, stddev=1)
+
+        latten_array = initializer_(
+            shape=(lattent_dim, projection_dim))
+        latten_array = tf.expand_dims(latten_array, 0)
+
+        latten_array_input = tf.Variable(
+            initial_value=latten_array, trainable=True, shape=(1, lattent_dim, projection_dim))
+
+        # calculate the stochastic Depth probability
+        dpr = None
+        if stochastic_depth:
+            dpr = [x for x in np.linspace(
+                0, stochastic_depth_rate, num_transformer_blocks)]
+
+        for i in range(num_model_layer):
+                # Cross Attention Model
+                latten_array_input = cross_attention_module_func(
+                    latten_array_input, patches_unroll, projection_dim, ffn_units, dropout)
+
+                latten_array_input = latten_transformer_attention_func(latten_array_input, projection_dim, num_multi_heads,
+                                                                    num_transformer_blocks, ffn_units, dropout, stochastic_depth, dpr=dpr)
+
+        # End Self attation Model
+        print("this is latten_array_output at the self-attention layer",latten_array_input.shape)
+        if pooling_mode == "1D":
+            representation = tf.keras.layers.GlobalAveragePooling1D()(latten_array_input)
+        elif pooling_mode == "sequence_pooling":
+            representation = tf.keras.layers.LayerNormalization(
+                epsilon=1e-5)(latten_array_input)
+            attention_weights = tf.nn.softmax(
+                tf.keras.layers.Dense(1)(representation), axis=1)
+            weighted_representation = tf.matmul(
+                attention_weights, representation, transpose_a=True
+            )
+            representation = tf.squeeze(weighted_representation, -2)
+
+        if include_top:
+            print('using top')
+            # clasify output
+            representation = tf.keras.layers.Dense(num_class)(representation)
+
+        model = tf.keras.Model(inputs=inputs, outputs=representation)
+        return model

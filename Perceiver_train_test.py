@@ -6,8 +6,7 @@ from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
 from tensorflow.python.keras.backend import dropout, learning_phase
 import tensorflow_addons as tfa
-from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import Conv_Perceiver_architecture_func, convnet_perceiver_architecture
-
+from Neural_Net_Architecture.Transformer.perceiver_ViT_Addited_Variant_transformer_architecture import perceiver_architecture, preceiver_architecture_func, perceiver_architecture_integ_regularize
 import argparse
 from tensorflow.keras.optimizers import schedules
 from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
@@ -29,7 +28,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:4], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -45,8 +44,8 @@ Auto = tf.data.experimental.AUTOTUNE
 input_shape = (32, 32, 3)
 IMG_SIZE = 32
 num_class = 100
-#Patches unroll for ViT and Normal transformer
-patch_size = 4
+# Patches unroll for ViT and Normal transformer
+patch_size = 8
 num_patches = (IMG_SIZE//patch_size)**2
 data_dim = num_patches
 
@@ -63,7 +62,7 @@ stochastic_depth_rate = 0.1
 
 num_multi_heads = 8  # --> multhi Attention Module to processing inputs
 # Encoder -- Decoder are # --> Increasing block create deeper Transformer model
-NUM_TRANSFORMER_BLOCK = 4
+NUM_TRANSFORMER_BLOCK = 2
 # Corresponding with Depth of self-attention
 # Model depth stack multiple CrossAttention +self-trasnformer_Block
 NUM_MODEL_LAYERS = 2
@@ -120,23 +119,28 @@ with strategy.scope():
         test_ds = strategy.experimental_distribute_dataset(test_ds)
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
-        conv_perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
-                                                                latten_dim, projection_dim, num_multi_heads,
-                                                                NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                                classification_head, include_top=include_top, pooling_mode="sequence_pooling",
-                                                                stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
+       # Create model Architecutre
+        perceiver_model = perceiver_architecture(patch_size, data_dim, latten_dim, projection_dim, num_multi_heads,
+                                                 NUM_TRANSFORMER_BLOCK, FFN_layers_units, dropout, NUM_MODEL_LAYERS,
+                                                 classification_head, include_top=True, pooling_mode="sequence_pooling")
 
-        conv_perceiver_model(tf.keras.Input((input_shape)))
-        conv_perceiver_model.summary()
+        # perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
+        #                                                    latten_dim, projection_dim, num_multi_heads,
+        #                                                    NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
+        #                                                    classification_head, include_top=include_top, pooling_mode="sequence_pooling",
+        #                                                    stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
+
+        perceiver_model(tf.keras.Input((input_shape)))
+        perceiver_model.summary()
 
         # Initialize the Random weight
         x = tf.random.normal((BATCH_SIZE_per_replica, IMG_SIZE, IMG_SIZE, 3))
-        h = conv_perceiver_model(x, training=False)
+        h = perceiver_model(x, training=False)
         print("Succeed Initialize online encoder")
         print(f"Conv_Perciever encoder OUTPUT: {h.shape}")
 
         num_params_f = tf.reduce_sum(
-            [tf.reduce_prod(var.shape) for var in conv_perceiver_model.trainable_variables])
+            [tf.reduce_prod(var.shape) for var in perceiver_model.trainable_variables])
         print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
         # Configure Logs recording during training
@@ -159,14 +163,14 @@ with strategy.scope():
 
         # Model Hyperparameter Defined Primary
         # 1. Define init
-        init_lr = 1e-3
-        weight_decay = 1e-6
-        # # 2. Schedule init
-        # optimizer = tfa.optimizers.LAMB(
-        #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
+        # init_lr = 1e-3
+        # weight_decay = 1e-6
+        # # # 2. Schedule init
+        # # optimizer = tfa.optimizers.LAMB(
+        # #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
 
-        optimizer = tfa.optimizers.SGDW(
-            learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay)
+        # optimizer = tfa.optimizers.SGDW(
+        #     learning_rate=init_lr, momentum=0.9, weight_decay=weight_decay)
 
         # optimizer = tfa.optimizers.AdamW(
         #     learning_rate=init_lr, weight_decay=weight_decay)
@@ -175,13 +179,13 @@ with strategy.scope():
         # Custom Define Hyperparameter
         ################################
         # 3. Schedule CosineDecay warmup
-        # base_lr = 0.3
-        # lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
-        # # optimizers = get_optimizer(lr_rate)
-        # # AdamW = optimizers.optimizer_weight_decay(args)
-        # # Borrow testing
-        # optimizer = tfa.optimizers.AdamW(
-        #     learning_rate=lr_rate, weight_decay=args.weight_decay)
+        base_lr = 0.3
+        lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
+        # optimizers = get_optimizer(lr_rate)
+        # AdamW = optimizers.optimizer_weight_decay(args)
+        # Borrow testing
+        optimizer = tfa.optimizers.AdamW(
+            learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         # # model compile
         # conv_perceiver_model.compile(optimizer=optimizer,
@@ -198,7 +202,7 @@ with strategy.scope():
         # Custom training Loop
         ########################################
         checkpoint = tf.train.Checkpoint(
-            optimizer=optimizer, model=conv_perceiver_model)
+            optimizer=optimizer, model=perceiver_model)
         loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
                                                                     reduction=tf.keras.losses.Reduction.NONE)
 
@@ -221,14 +225,14 @@ with strategy.scope():
             # Forward pass
             with tf.GradientTape() as tape:
                 # (bs, 512)
-                y_pred_logits = conv_perceiver_model(
+                y_pred_logits = perceiver_model(
                     x, training=True)  # (bs, 10)
                 loss = distributed_loss(y, y_pred_logits)
             # Backward pass
             grads = tape.gradient(
-                loss, conv_perceiver_model.trainable_variables)
+                loss, perceiver_model.trainable_variables)
             optimizer.apply_gradients(
-                zip(grads, conv_perceiver_model.trainable_variables))
+                zip(grads, perceiver_model.trainable_variables))
 
             train_accuracy.update_state(y, y_pred_logits)
             train_loss.update_state(loss)
@@ -239,7 +243,7 @@ with strategy.scope():
             images = x
             labels = y
 
-            predictions = conv_perceiver_model(images, training=False)
+            predictions = perceiver_model(images, training=False)
             t_loss = loss_object(labels, predictions)
 
             test_loss.update_state(t_loss)

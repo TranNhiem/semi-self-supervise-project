@@ -51,8 +51,8 @@ data_dim = num_patches
 
 num_conv_layers = 2  # for unroll patches -- Overlap
 spatial2projection_dim = [128, 256]  # This equivalent to # filters
-conv_position_embedding = True
-latten_dim = 128  # size of latten array --> (N)
+position_embedding = True
+latten_dim = 150  # size of latten array --> (N)
 projection_dim = 256
 dropout_rate = 0.2
 stochastic_depth_rate = 0.1
@@ -93,26 +93,6 @@ with strategy.scope():
         # Prepare data training
         data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
         num_images = data.num_train_images
-
-        def dataset_fn(input_context):
-            batch_size = input_context.get_per_replica_batch_size(
-                global_BATCH_SIZE)
-            train_ds, test_ds = data.supervised_train_ds_test_ds()
-            train_ds = (train_ds.shard(input_context.num_input_pipelines,
-                                       input_context.input_pipeline_id)
-                        .batch(batch_size)
-                        .prefetch(Auto)
-                        )
-            test_ds = (test_ds.shard(input_context.num_input_pipelines,
-                                     input_context.input_pipeline_id)
-                       .batch(batch_size)
-                       .prefetch(Auto)
-                       )
-
-            return train_ds, test_ds
-        # train_dataset=strategy.experimental_distribute_dataset(train_dataset)
-        # train_ds, test_ds = strategy.experimental_distribute_datasets_from_function(
-        #     lambda input_context: dataset_fn(input_context))
 
         train_ds, test_ds = data.supervised_train_ds_test_ds()
         train_ds = strategy.experimental_distribute_dataset(train_ds)
@@ -179,7 +159,7 @@ with strategy.scope():
         # Custom Define Hyperparameter
         ################################
         # 3. Schedule CosineDecay warmup
-        base_lr = 0.3
+        base_lr = 0.003
         lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
         # optimizers = get_optimizer(lr_rate)
         # AdamW = optimizers.optimizer_weight_decay(args)

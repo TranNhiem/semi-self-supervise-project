@@ -29,7 +29,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:4], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -53,7 +53,7 @@ num_class = 100
 num_conv_layers = 2  # for unroll patches -- Overlap
 spatial2projection_dim = [256, 512]  # This equivalent to # filters
 conv_position_embedding = True
-latten_dim = 256  # size of latten array --> (N)
+latten_dim = 250  # size of latten array --> (N)
 projection_dim = 512
 dropout_rate = 0.2
 stochastic_depth = True
@@ -111,7 +111,7 @@ with strategy.scope():
         conv_perceiver_model = Conv_Perceiver_architecture_func_v1(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
                                                                    latten_dim, projection_dim, num_multi_heads,
                                                                    NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-                                                                   classification_head, include_top=include_top, pooling_mode="1D",
+                                                                   classification_head, include_top=include_top, pooling_mode="sequence_pooling",
                                                                    stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate)
 
         conv_perceiver_model(tf.keras.Input((input_shape)))

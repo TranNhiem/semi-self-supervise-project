@@ -4,7 +4,7 @@ from utils.args import parse_args
 from Data_utils.datasets import SEED
 from Data_utils.datasets import CIFAR100_dataset
 from tensorflow.keras import optimizers
-from tensorflow.python.keras.backend import dropout, learning_phase
+
 import tensorflow_addons as tfa
 from Neural_Net_Architecture.Transformer.perceiver_ViT_Addited_Variant_transformer_architecture import perceiver_architecture, preceiver_architecture_func, perceiver_architecture_integ_regularize
 import argparse
@@ -28,7 +28,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:4], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
         for gpu in gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
 
@@ -45,14 +45,13 @@ input_shape = (32, 32, 3)
 IMG_SIZE = 32
 num_class = 100
 # Patches unroll for ViT and Normal transformer
-patch_size = 8
+patch_size = 4
 num_patches = (IMG_SIZE//patch_size)**2
 data_dim = num_patches
 
-num_conv_layers = 2  # for unroll patches -- Overlap
-spatial2projection_dim = [128, 256]  # This equivalent to # filters
+
 position_embedding = True
-latten_dim = 150  # size of latten array --> (N)
+latent_dim = 200  # size of latten array --> (N)
 projection_dim = 256
 dropout_rate = 0.2
 stochastic_depth_rate = 0.1
@@ -62,7 +61,7 @@ stochastic_depth_rate = 0.1
 
 num_multi_heads = 8  # --> multhi Attention Module to processing inputs
 # Encoder -- Decoder are # --> Increasing block create deeper Transformer model
-NUM_TRANSFORMER_BLOCK = 2
+NUM_TRANSFORMER_BLOCK = 4
 # Corresponding with Depth of self-attention
 # Model depth stack multiple CrossAttention +self-trasnformer_Block
 NUM_MODEL_LAYERS = 2
@@ -76,9 +75,9 @@ print(f"Patch size: {patch_size} X {patch_size} = {patch_size ** 2} ")
 print(f"Patches per image: {num_patches}")
 print(
     f"Elements per patch [patch_size*patch_size] (3 channels RGB): {(patch_size ** 2) * 3}")
-print(f"Latent array shape: {latten_dim} X {projection_dim}")
+print(f"Latent array shape: {latent_dim} X {projection_dim}")
 print(f"Data array shape: {num_patches} X {projection_dim}")
-args = parse_args()
+
 args = parse_args()
 BATCH_SIZE_per_replica = args.train_batch_size
 global_BATCH_SIZE = BATCH_SIZE_per_replica * strategy.num_replicas_in_sync
@@ -100,17 +99,15 @@ with strategy.scope():
         # Create model Architecutre
         # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
        # Create model Architecutre
-        perceiver_model = perceiver_architecture(patch_size, data_dim, latten_dim, projection_dim, num_multi_heads,
-                                                 NUM_TRANSFORMER_BLOCK, FFN_layers_units, dropout, NUM_MODEL_LAYERS,
-                                                 classification_head, include_top=True, pooling_mode="sequence_pooling")
+        # perceiver_model = perceiver_architecture_integ_regularize(patch_size, data_dim, latent_dim, projection_dim, num_multi_heads,
+        #                                                           NUM_TRANSFORMER_BLOCK, FFN_layers_units, dropout_rate, NUM_MODEL_LAYERS,
+        #                                                           classification_head,  num_class, include_top=True, pooling_mode="1D", stochastic_depth=False, stochastic_depth_rate=0.1)
 
-        # perceiver_model = Conv_Perceiver_architecture_func(input_shape, num_class, IMG_SIZE, num_conv_layers,  conv_position_embedding, spatial2projection_dim,
-        #                                                    latten_dim, projection_dim, num_multi_heads,
-        #                                                    NUM_TRANSFORMER_BLOCK, NUM_MODEL_LAYERS, FFN_layers_units, dropout_rate,
-        #                                                    classification_head, include_top=include_top, pooling_mode="sequence_pooling",
-        #                                                    stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate)
+        perceiver_model = preceiver_architecture_func(input_shape, num_class, patch_size, data_dim, latent_dim, projection_dim, num_multi_heads,
+                                                      NUM_TRANSFORMER_BLOCK, FFN_layers_units, dropout_rate, NUM_MODEL_LAYERS,
+                                                      include_top=True, pooling_mode="sequence_pooling", stochastic_depth=True, stochastic_depth_rate=0.1)
 
-        perceiver_model(tf.keras.Input((input_shape)))
+        perceiver_model(tf.keras.Input(input_shape))
         perceiver_model.summary()
 
         # Initialize the Random weight
@@ -181,8 +178,8 @@ with strategy.scope():
         ########################################
         # Custom training Loop
         ########################################
-        checkpoint = tf.train.Checkpoint(
-            optimizer=optimizer, model=perceiver_model)
+        # checkpoint = tf.train.Checkpoint(
+        #     optimizer=optimizer, model=perceiver_model)
         loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
                                                                     reduction=tf.keras.losses.Reduction.NONE)
 
@@ -251,8 +248,8 @@ with strategy.scope():
 
             for _, (test_x, test_y) in enumerate(test_ds):
                 distributed_test_step(test_x, test_y)
-            if epoch_id % 10 == 0:
-                checkpoint.save(checkpoint_prefix)
+            # if epoch_id % 10 == 0:
+            #     checkpoint.save(checkpoint_prefix)
 
             template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                         "Test Accuracy: {}")

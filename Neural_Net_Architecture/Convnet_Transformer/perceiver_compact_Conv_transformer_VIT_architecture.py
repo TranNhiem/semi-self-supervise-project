@@ -448,7 +448,6 @@ def create_classification_ffn(units_neuron, dropout_rate):
 # Stochastic Depth
 # -- Similar Dropout Concept (Instead of dropout Neurons --> This dropout layers)
 
-
 class stochasticDepth(tf.keras.layers.Layer):
     def __init__(self, drop_layer, ):
         super(stochasticDepth, self).__init__()
@@ -511,7 +510,6 @@ class sequence_pooling(tf.keras.layers.Layer):
 
 # 1 Conventional Self-Attention Module
 # Attention Consideration the lattent_dim and ffn_units last later(Same or Differen??)
-
 
 def latten_transformer_attention(lattent_dim, projection_dim, num_multi_head,
                                  num_transformer_block, ffn_units, dropout, stochastic_depth=False, dpr=None):
@@ -655,7 +653,6 @@ def VIT_attention_Module_v1_design(inputs, i_, num_multi_head,
     return x3
 
 # 2 Cross-Attention Module
-
 
 def cross_attention_module(lattent_dim, data_dim, projection_dim, ffn_units, dropout):
     '''
@@ -805,7 +802,6 @@ V0 --> Design Architecture
 
 # This model can Implement directly with Pooling 1D ERROR Sequence_pooling
 
-
 class convnet_perceiver_architecture(tf.keras.Model):
 
     def __init__(self,
@@ -951,7 +947,6 @@ class convnet_perceiver_architecture(tf.keras.Model):
 
 # This model Design For Experiment
 
-
 def Conv_Perceiver_architecture_func(input_shape, num_class,
                                      IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
                                      # Cross attention Module
@@ -1043,7 +1038,6 @@ def Conv_Perceiver_architecture_func(input_shape, num_class,
     return model
 
 # This model official Implementation
-
 
 def Conv_Perceiver_architecture_func_v1(input_shape, num_class,
                                         IMG_SIZE, num_conv_layers, conv_position_embedding, spatial2project_dim,
@@ -1490,7 +1484,6 @@ def conv_VIT_V1_func_(input_shape, num_class, image_size, num_conv_layers, spati
     return model
 
 # Official Implementation Conv_ViT architecture
-
 
 def conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2project_dim, embedding_option, projection_dim,
                      num_transformer_blocks, num_head_attention, ffn_units, classification_unit,

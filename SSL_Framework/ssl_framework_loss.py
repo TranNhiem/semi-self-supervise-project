@@ -36,7 +36,6 @@ def multi_class_npair_loss_temperature(z, y, temperature):
 
 '''N-Pair Loss'''
 
-
 def multiclass_N_pair_loss(p, z):
     x_i = tf.math.l2_normalize(p, axis=1)
     x_j = tf.math.l2_normalize(z, axis=1)
@@ -57,9 +56,7 @@ def multiclass_N_pair_loss(p, z):
 '''SimCLR Paper Nt-Xent Loss # ASYMETRIC Loss'''
 # Nt-Xent ---> N_Pair loss with Temperature scale
 # Nt-Xent Loss (Remember in this case dataset two image stacked)
-# This implementation for the Special input data
-
-
+## This implementation for the Special input data
 def nt_xent_asymetrize_loss(z,  temperature):
     '''The issue of design this loss two image is in one array
     when we multiply them that will lead two two same things mul together???
@@ -92,12 +89,9 @@ def nt_xent_asymetrize_loss(z,  temperature):
     losses = -tf.math.log(numerator/denominators)
     return tf.reduce_mean(losses)
 
-
 '''SimCLR paper Asytemrize_loss'''
 
 # Mask to remove the positive example from the rest of Negative Example
-
-
 def get_negative_mask(batch_size):
     # return a mask that removes the similarity score of equal/similar images
     # Ensure distinct pair of image get their similarity scores
@@ -109,16 +103,13 @@ def get_negative_mask(batch_size):
 
     return tf.constant(negative_mask)
 
-
-# Cosine Similarity distance loss measurement
+## Cosine Similarity distance loss measurement
 consie_sim_1d = tf.keras.losses.CosineSimilarity(
     axis=1, reduction=tf.keras.losses.Reduction.NONE)
 cosine_sim_2d = tf.keras.losses.CosineSimilarity(
     axis=2, reduction=tf.keras.losses.Reduction.NONE)
 
-# Official Implementation NCE Loss (Noisy Contrasitve Estimator Loss)
-
-
+## Official Implementation NCE Loss (Noisy Contrasitve Estimator Loss)
 def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
     # L2 Norm
     p_l2 = tf.math.l2_normalize(p, axis=1)
@@ -152,9 +143,7 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
 
 '''SimCLR Paper Nt-Xent Loss # SYMMETRIZED Loss'''
 # Nt-Xent Loss Symmetrized
-# Simple Implemenation the loss NOTED [Experimental design]
-
-
+## Simple Implemenation the loss NOTED [Experimental design]
 def nt_xent_symmetrize_keras(p, z, temperature):
     # cosine similarity the dot product of p,z two feature vectors
     x_i = tf.math.l2_normalize(p, axis=1)
@@ -171,7 +160,6 @@ def nt_xent_symmetrize_keras(p, z, temperature):
     loss_2_1 = tf.keras.losses.sparse_categorical_crossentropy(
         contrastive_labels, tf.transpose(similarity), from_logits=True, )
     return (loss_1_2 + loss_2_1) / 2
-
 
 ######################################################################################
 '''NONE CONTRASTIVE LOSS'''
@@ -191,7 +179,6 @@ def byol_symetrize_loss(p, z):
 
 '''Loss 2 SimSiam Model'''
 # Asymetric LOSS
-
 
 def simsam_loss(p, z):
     # The authors of SimSiam emphasize the impact of

@@ -26,21 +26,7 @@ checkpoint_dir = './test_model_checkpoint/'
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
 wandb.login()
 
-# Setting GPUs
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
 
-    try:
-        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-
-        logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-        print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
-    except RuntimeError as e:
-        print(e)
-
-strategy = tf.distribute.MirroredStrategy()
 Auto = tf.data.experimental.AUTOTUNE
 
 
@@ -189,16 +175,17 @@ with strategy.scope():
         # Custom Define Hyperparameter
         ################################
         # 3. Schedule CosineDecay warmup
-        base_lr = 0.003
+        base_lr = 0.03
         lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
-        # optimizers = get_optimizer(lr_rate)
-        # AdamW = optimizers.optimizer_weight_decay(args)
+        optimizers = get_optimizer(lr_rate)
+        LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
+            args)
         # Borrow testing
-        optimizer = tfa.optimizers.AdamW(
-            learning_rate=lr_rate, weight_decay=args.weight_decay)
+        # optimizer = tfa.optimizers.AdamW(
+        #     learning_rate=lr_rate, weight_decay=args.weight_decay)
 
         checkpoint = tf.train.Checkpoint(
-            optimizer=optimizer, model=conv_VIT_model)
+            optimizer=LARSW_GC, model=conv_VIT_model)
         # model compile
         # conv_VIT_model.compile(optimizer=optimizer,
         #                        loss=tf.keras.losses.CategoricalCrossentropy(),
@@ -240,7 +227,7 @@ with strategy.scope():
                 loss = distributed_loss(y, y_pred_logits)
             # Backward pass
             grads = tape.gradient(loss, conv_VIT_model.trainable_variables)
-            optimizer.apply_gradients(
+            LARSW_GC.apply_gradients(
                 zip(grads, conv_VIT_model.trainable_variables))
 
             train_accuracy.update_state(y, y_pred_logits)

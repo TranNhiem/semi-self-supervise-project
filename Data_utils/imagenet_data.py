@@ -27,6 +27,7 @@ class imagenet_dataset():
         self.IMG_SIZE = IMG_SIZE
         self.BATCH_SIZE = BATCH_SIZE
         self.x_train = list(paths.list_images(img_path))
+        self.num_images = len(self.x_train)
 
     @classmethod
     def parse_images(self, image_path):

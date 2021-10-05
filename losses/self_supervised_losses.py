@@ -125,8 +125,11 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
     z_l2 = tf.math.l2_normalize(z, axis=1)
 
     # Cosine Similarity distance loss
-    pos_loss = consie_sim_1d(p_l2, z_l2)
-    pos_loss = tf.reshape(l_pos, (batch_size, 1))
+
+    #pos_loss = consie_sim_1d(p_l2, z_l2)
+    pos_loss = tf.matmul(tf.expand_dims(p_l2, 1), tf.expand_dims(z_l2, 2))
+
+    pos_loss = tf.reshape(pos_loss, (batch_size, 1))
     pos_loss /= temperature
     negatives = tf.concat([p_l2, z_l2], axis=0)
     # Mask out the positve mask from batch of Negative sample
@@ -134,7 +137,10 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
 
     loss = 0
     for positives in [p_l2, z_l2]:
-        negative_loss = cosine_sim_2d(positives, negatives)
+
+        #negative_loss = cosine_sim_2d(positives, negatives)
+        negative_loss = tf.tensordot(tf.expand_dims(
+            positives, 1), tf.expand_dims(tf.transpose(negatives), 0), axes=2)
         l_labels = tf.zeros(batch_size, dtype=tf.int32)
         l_neg = tf.boolean_mask(negative_loss, negative_mask)
 
@@ -142,9 +148,10 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
         l_neg /= temperature
 
         logits = tf.concat([pos_loss, l_neg], axis=1)  # [N, K+1]
-
-        loss += tf.keras.losses.SparseCategoricalCrossentropy(y_pred=logits, y_true=l_labels,
-                                                              from_logits=True, reduction=tf.keras.losses.Reduction.SUM)
+        tf.keras.losses.SparseCategoricalCrossentropy()
+        loss_ = tf.keras.losses.SparseCategoricalCrossentropy(
+            from_logits=True, reduction=tf.keras.losses.Reduction.SUM)
+        loss += loss_(y_pred=logits, y_true=l_labels)
     loss = loss/(2*batch_size)
 
     return loss

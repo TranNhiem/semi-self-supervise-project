@@ -28,7 +28,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
     except RuntimeError as e:
@@ -44,7 +44,7 @@ if args.SSL_training == "ssl_training":
     IMG_SIZE = 64
 
 # Cifar 100 Cifar 10 -IMG-SIZE
-elif args.SSL_training == "classify_test":
+elif args.SSL_training == "classify_train":
     input_shape = (32, 32, 3)
     IMG_SIZE = 32
 # Supervised Training
@@ -91,6 +91,7 @@ if args.SSL_training == "ssl_train":
     # ds_two = strategy.experimental_distribute_dataset(test_ds)
 
 if args.SSL_training == "classify_train":
+    print("You trainging the classification head")
     # # Prepare data training
     data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
     num_images = data.num_train_images

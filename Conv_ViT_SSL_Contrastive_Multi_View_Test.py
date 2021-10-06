@@ -14,7 +14,7 @@ from Training_strategy.learning_rate_optimizer_weight_decay_schedule import Warm
 from wandb.keras import WandbCallback
 import tensorflow as tf
 
-
+args = parse_args()
 # import tensorflow as tf
 checkpoint_dir = './test_model_checkpoint/'
 checkpoint_prefix = os.path.join(checkpoint_dir, "ckpt")
@@ -36,7 +36,6 @@ if gpus:
 
 strategy = tf.distribute.MirroredStrategy()
 
-args = parse_args()
 # Image_Size for Training and Finetune --> Check IMG_SIZE correct
 # Tiny ImageNet-SIZE
 if args.SSL_training == "ssl_training":
@@ -74,37 +73,35 @@ classification_unit = [projection_dim, num_class]
 
 print(f"Image size: {IMG_SIZE} X {IMG_SIZE} = {IMG_SIZE ** 2}")
 temperature = 0.1
-
 BATCH_SIZE_per_replica = args.train_batch_size
 global_BATCH_SIZE = BATCH_SIZE_per_replica * strategy.num_replicas_in_sync
 print("Global _batch_size", global_BATCH_SIZE)
 
 
-if args.SSL_training == "ssl_train":
-
-    # # Prepare data training
-    image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
-    data = imagenet_dataset(IMG_SIZE, global_BATCH_SIZE, img_path=image_path)
-    num_images = data.num_images
-    train_ds = data.ssl_Simclr_Augment_policy()
-    train_ds = strategy.experimental_distribute_dataset(train_ds)
-    # ds_two = strategy.experimental_distribute_dataset(test_ds)
-
-if args.SSL_training == "classify_train":
-    # # Prepare data training
-    data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
-    num_images = data.num_train_images
-    train_ds, test_ds = data.supervised_train_ds_test_ds()
-    train_ds = strategy.experimental_distribute_dataset(train_ds)
-    test_ds = strategy.experimental_distribute_dataset(test_ds)
+EPOCHS = args.train_epochs
+image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
+# # Prepare data training
+data = imagenet_dataset(IMG_SIZE, global_BATCH_SIZE, img_path=image_path)
+num_images = data.num_images
+train_ds = data.ssl_Simclr_Augment_policy()
+train_ds = strategy.experimental_distribute_dataset(train_ds)
+# ds_two = strategy.experimental_distribute_dataset(test_ds)
 
 with strategy.scope():
 
     def main(args):
-
+        EPOCHS = args.train_epochs
         if args.SSL_training == "ssl_train":
-            EPOCHS = args.train_epochs
-            include_top = False
+            # Create model Architecutre
+            # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
+
+            # conv_VIT_model = conv_transform_VIT(num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+            #                                     NUM_TRANSFORMER_BLOCK, num_multi_heads,
+            #                                     FFN_layers_units, classification_unit, dropout_rate,
+            #                                     stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
+            #                                     include_top=include_top, pooling_mode="1D",
+            #                                     )
+
             conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
                                               NUM_TRANSFORMER_BLOCK, num_multi_heads,
                                               FFN_layers_units, classification_unit, dropout_rate,
@@ -132,7 +129,6 @@ with strategy.scope():
 
             configs = {
                 "Model_Arch": "Conv_ViT_arch",
-                "Training mode": "Pretrain_task",
                 "DataAugmentation_types": "SimCLR",
                 "Dataset": "TinyImageNet",
                 "IMG_SIZE": IMG_SIZE,
@@ -197,6 +193,11 @@ with strategy.scope():
             test_loss = tf.keras.metrics.Mean(name='test_loss')
             train_loss = tf.keras.metrics.Mean(name="train_loss")
 
+            # train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            #     name='train_accuracy')
+            # test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+            #     name='test_accuracy')
+
             @tf.function
             def train_step(ds_one, ds_two):  # (bs, 32, 32, 3), (bs)
 
@@ -216,12 +217,25 @@ with strategy.scope():
                 # train_accuracy.update_state(y, y_pred_logits)
                 return loss
 
+            # def test_step(ds_one, ds_two):
+
+            #     rep_ds_one = conv_VIT_model(ds_one, training=False)
+            #     rep_ds_two = conv_VIT_model(ds_two, training=False)
+            #     t_loss = distributed_loss(rep_ds_one, rep_ds_two)
+
+            #     test_loss.update_state(t_loss)
+            #     #test_accuracy.update_state(labels, predictions)
+
             @ tf.function
             def distributed_train_step(ds_one, ds_two):
                 per_replica_losses = strategy.run(
                     train_step, args=(ds_one, ds_two))
                 return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
                                        axis=None)
+
+            # @ tf.function
+            # def distributed_test_step(ds_one, ds_two):
+            #     return strategy.run(test_step, args=(ds_one, ds_two))
 
             for epoch_id in range(EPOCHS):
 
@@ -255,11 +269,24 @@ with strategy.scope():
                 # train_loss.reset_states()
                 # test_loss.reset_states()
 
-        elif args.SSL_training == "classify_train":
+        elif args.SSL_training == "pretrain":
 
-            EPOCHS = args.classify_epochs
-            # Future Design Remove the Top Keep Only Encoder
-            include_top = False
+            # # Prepare data training
+            data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
+            num_images = data.num_train_images
+            train_ds, test_ds = data.supervised_train_ds_test_ds()
+            train_ds = strategy.experimental_distribute_dataset(train_ds)
+            test_ds = strategy.experimental_distribute_dataset(test_ds)
+
+            # Create model Architecutre
+            # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
+
+            # conv_VIT_model = conv_transform_VIT(num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+            #                                     NUM_TRANSFORMER_BLOCK, num_multi_heads,
+            #                                     FFN_layers_units, classification_unit, dropout_rate,
+            #                                     stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
+            #                                     include_top=include_top, pooling_mode="1D",
+            #                                     )
 
             conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
                                               NUM_TRANSFORMER_BLOCK, num_multi_heads,
@@ -282,43 +309,13 @@ with strategy.scope():
                 [tf.reduce_prod(var.shape) for var in conv_VIT_model.trainable_variables])
             print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
-            # Loading self-Supervised Pretrain_weight
-            checkpoint_dir = './test_model_checkpoint/'
-            latest = tf.train.latest_checkpoint(checkpoint_dir)
-            conv_VIT_model.load_weights(latest)
-            conv_VIT_model.trainable = False  # Freeze entire encoder model
-            print("Successful Loading Model Pretrain Weight --- Freezing Encoder")
-
-            def classification_ffn(classification_unit, dropout_rate):
-                '''
-                args: Layers_number_neuron  == units_neuron
-                    example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
-                dropout rate--> adding 1 dropout percentages layer Last ffn model
-
-                return  FFN model in keras Sequential model
-                '''
-                ffn_layers = []
-                for units in units_neuron[:-1]:
-                    ffn_layers.append(tf.keras.layers.Dense(
-                        units=units, activation=tf.nn.gelu))
-
-                ffn_layers.append(tf.keras.layers.Dense(
-                    units=units_neuron[-1], activation='softmax'))  # activation='softmax'
-                # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
-                ffn = tf.keras.Sequential(ffn_layers)
-
-                return ffn
-
-            classify_model = classification_ffn(
-                classification_unit, dropout_rate)
             # Configure Logs recording during training
 
             # Training Configure
 
             configs = {
                 "Model_Arch": "Conv_ViT_arch",
-                "DataAugmentation_types": "SimCLR",
-                "Experiment_Type": "fine-Tune classification",
+                "DataAugmentation_types": "None for testing",
                 "Dataset": "Cifar100",
                 "IMG_SIZE": IMG_SIZE,
                 "Epochs": EPOCHS,
@@ -356,7 +353,7 @@ with strategy.scope():
             # Custom Define Hyperparameter
             ################################
             # 3. Schedule CosineDecay warmup
-            base_lr = 0.003
+            base_lr = 0.03
             lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
             optimizers = get_optimizer(lr_rate)
             LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
@@ -364,6 +361,19 @@ with strategy.scope():
             # Borrow testing
             # optimizer = tfa.optimizers.AdamW(
             #     learning_rate=lr_rate, weight_decay=args.weight_decay)
+
+            checkpoint = tf.train.Checkpoint(
+                optimizer=LARSW_GC, model=conv_VIT_model)
+            # model compile
+            # conv_VIT_model.compile(optimizer=optimizer,
+            #                        loss=tf.keras.losses.CategoricalCrossentropy(),
+            #                        metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
+            #                                 tf.keras.metrics.TopKCategoricalAccuracy(5, name="top5_acc")])
+
+            # MODEL TRAINING
+
+            # conv_VIT_model.fit(train_ds, epochs=EPOCHS,
+            #                    validation_data=test_ds, callbacks=[WandbCallback()])  # callbacks=callbacks_list,
 
             ##########################################
             # Custom Keras Loss
@@ -391,14 +401,13 @@ with strategy.scope():
                 # Forward pass
                 with tf.GradientTape() as tape:
                     # (bs, 512)
-                    repr_ = conv_VIT_model(
-                        x, training=False)  # (bs, 10)
-                    y_pred_logits = classify_model(repr_, training=True)
+                    y_pred_logits = conv_VIT_model(
+                        x, training=True)  # (bs, 10)
                     loss = distributed_loss(y, y_pred_logits)
                 # Backward pass
-                grads = tape.gradient(loss, classify_model.trainable_variables)
+                grads = tape.gradient(loss, conv_VIT_model.trainable_variables)
                 LARSW_GC.apply_gradients(
-                    zip(grads, classify_model.trainable_variables))
+                    zip(grads, conv_VIT_model.trainable_variables))
 
                 train_accuracy.update_state(y, y_pred_logits)
 
@@ -408,9 +417,7 @@ with strategy.scope():
                 images = x
                 labels = y
 
-                repr_ = conv_VIT_model(images, training=False)
-                prediction = classify_model(repr_, training=Fasle)
-
+                predictions = conv_VIT_model(images, training=False)
                 t_loss = loss_object(labels, predictions)
 
                 test_loss.update_state(t_loss)
@@ -438,6 +445,8 @@ with strategy.scope():
                 # train_loss.update_state(train_losses)
                 for _, (test_x, test_y) in enumerate(test_ds):
                     distributed_test_step(test_x, test_y)
+                if epoch_id % 10 == 0:
+                    checkpoint.save(checkpoint_prefix)
 
                 template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
                             "Test Accuracy: {}")
@@ -458,10 +467,6 @@ with strategy.scope():
                 test_loss.reset_states()
                 train_accuracy.reset_states()
                 test_accuracy.reset_states()
-
-        else:
-            raise ValueError("Training mode not Implement Yet")
-
     if __name__ == '__main__':
 
         args = parse_args()

@@ -76,7 +76,7 @@ def nt_xent_asymetrize_loss(z,  temperature):
     ij_indices = tf.reshape(tf.range(z.shape[0]), shape=[-1, 2])
     ji_indices = tf.reverse(ij_indices, axis=[1])
 
-    #[[0, 1], [1, 0], [2, 3], [3, 2], ...]
+    # [[0, 1], [1, 0], [2, 3], [3, 2], ...]
     positive_indices = tf.reshape(tf.concat(
         [ij_indices, ji_indices], axis=1), shape=[-1, 2])  # Indice positive pair
     # --> Output N-D array
@@ -127,7 +127,7 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
 
     # Cosine Similarity distance loss
 
-    #pos_loss = consie_sim_1d(p_l2, z_l2)
+    # pos_loss = consie_sim_1d(p_l2, z_l2)
     pos_loss = tf.matmul(tf.expand_dims(p_l2, 1), tf.expand_dims(z_l2, 2))
 
     pos_loss = tf.reshape(pos_loss, (batch_size, 1))
@@ -139,7 +139,7 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
     loss = 0
     for positives in [p_l2, z_l2]:
 
-        #negative_loss = cosine_sim_2d(positives, negatives)
+        # negative_loss = cosine_sim_2d(positives, negatives)
         negative_loss = tf.tensordot(tf.expand_dims(
             positives, 1), tf.expand_dims(tf.transpose(negatives), 0), axes=2)
         l_labels = tf.zeros(batch_size, dtype=tf.int32)
@@ -223,7 +223,7 @@ def simsam_loss_non_stop_Gr(p, z):
     # The authors of SimSiam emphasize the impact of
     # the `stop_gradient` operator in the paper as it
     # has an important role in the overall optimization.
-    #z = tf.stop_gradient(z)
+    # z = tf.stop_gradient(z)
     p = tf.math.l2_normalize(p, axis=1)
     z = tf.math.l2_normalize(z, axis=1)
     # Negative cosine similarity (minimizing this is
@@ -236,33 +236,17 @@ def simsam_loss_non_stop_Gr(p, z):
 ####################################################################################
 '''
 Why not using OFFLINE cluster method to assign the Psudo -- Group of lable feature on entire dataset
---> using this training in Supervised manner 
+--> using this training in Supervised manner
 ----->  THIS method has to go through entire data to generate all these subset label (expensive to implement)
 ==> Need the Online Clustering for reduce the computation expensive of the method
 
-## Using Non-Contrastive + Clustering Assignment 
+# Using Non-Contrastive + Clustering Assignment
 1. Building Prototype Net to Convert 256 Feature vector --> Smaller protype Vectors
 2. Bulding Sinkhorn For clustering Assignment (SwAV-- Online assigment with Learnable parameter)
 3. Cross entropy loss to optimize the encoder (2 version should be similar)
 
 '''
 # 1 Prototype Network
-
-
-def get_projection_protype(encod_output_shape, dense_1=1024, dense_2=96, prototype_dimension=10):
-    inputs = tf.keras.Input((encod_output_shape, ))
-
-    projection_1 = layers.Dense(units=dense_1)(inputs)
-    projection_1 = layers.BatchNormalization()(projection_1)
-    projection_1 = layers.Activation("relu")(projection_1)
-
-    projection_2 = layers.Dense(units=dense_2)(projection_1)
-    l2_norm = tf.math.l2_normalize(
-        projection_2, axis=1, name="projection_normalize")
-    prototype = layers.Dense(units=prototype_dimension,
-                             use_bias=False, name='protype')(l2_norm)
-
-    return tf.keras.Model(inputs=inputs, outputs=[l2_norm, prototype])
 
 
 # 2 Building the SInkhorn cluster assignment with 3 Itertion
@@ -289,4 +273,21 @@ def sinkhorn(sample_prototype_batch):
     return final_quantity
 
 
-def SwAV_loss()
+def SwAV_loss(tape, crops_for_assign, batch_size, NUM_CROPS, prototype, temperature):
+    loss = 0
+    for i, crop_id in enumerate(crops_for_assign):
+        with tape.stop_recording():
+            out = prototype[batch_size * crop_id: batch_size*(crop_id+1)]
+            # get assignment
+            q = sinkhorn(out)
+
+        # Cluster assigment predictiob
+        subloss = 0
+        for v in np.delete(np.arange(np.sum(NUM_CROPS)), crop_id):
+                        p = tf.nn.softmax(
+                            prototype[batch_size * v: batch_size * (v + 1)] / temperature)
+                        subloss -= tf.math.reduce_mean(
+                            tf.math.reduce_sum(q * tf.math.log(p), axis=1))
+        loss += subloss / tf.cast((tf.reduce_sum(NUM_CROPS) - 1), tf.float32)
+                
+    loss /= len(crops_for_assign)

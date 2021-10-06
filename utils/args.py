@@ -16,6 +16,9 @@ def parse_args():
     parser.add_argument('--train_epochs', type=int, default=1000,
                         help='Number of iteration')
 
+    parser.add_argument('--classify_epochs', type=int, default=50,
+                        help='Number of iteration')
+
     parser.add_argument('--train_steps', type=int, default=None,
                         help='Number base total steps iterate each epochs')
 
@@ -48,6 +51,11 @@ def parse_args():
     parser.add_argument('--weight_decay', type=float, default=1e-6,
                         help="weight_decay to penalize the update gradient")
 
-    # Configure fro Conv_Trasnformer Architecture
+    # Configure for Conv_Trasnformer Architecture
+
+    # Configure for Self-Supervised Training
+
+    parser.add_argument('--SSL_training', type=str, default="classify_train", help="Optimization for update the Gradient",
+                        choices=['ssl_traing', 'classify_train'])
 
     return parser.parse_args()

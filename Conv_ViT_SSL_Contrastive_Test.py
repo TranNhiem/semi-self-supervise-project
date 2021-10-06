@@ -298,12 +298,12 @@ with strategy.scope():
                 return  FFN model in keras Sequential model
                 '''
                 ffn_layers = []
-                for units in units_neuron[:-1]:
+                for units in classification_unit[:-1]:
                     ffn_layers.append(tf.keras.layers.Dense(
                         units=units, activation=tf.nn.gelu))
-
+                    ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
                 ffn_layers.append(tf.keras.layers.Dense(
-                    units=units_neuron[-1], activation='softmax'))  # activation='softmax'
+                    units=classification_unit[-1], activation='softmax'))  # activation='softmax'
                 # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
                 ffn = tf.keras.Sequential(ffn_layers)
 
@@ -409,7 +409,7 @@ with strategy.scope():
                 labels = y
 
                 repr_ = conv_VIT_model(images, training=False)
-                prediction = classify_model(repr_, training=Fasle)
+                predictions = classify_model(repr_, training=False)
 
                 t_loss = loss_object(labels, predictions)
 

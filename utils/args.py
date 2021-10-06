@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('-- exp_name', default='test', type=str,
                         help='experiment_name')
 
-    parser.add_argument('--train_epochs', type=int, default=200,
+    parser.add_argument('--train_epochs', type=int, default=1000,
                         help='Number of iteration')
 
     parser.add_argument('--train_steps', type=int, default=None,
@@ -25,13 +25,13 @@ def parse_args():
     parser.add_argument('--dataset', metavar='DATA', default='tiny-imagenet',
                         choices=['cifar10', 'cifar100', 'tiny-imagenet', 'imagenet'])
 
-    parser.add_argument('--learning_rate_scaling', metavar='learning_rate', default='no_scale',
+    parser.add_argument('--learning_rate_scaling', metavar='learning_rate', default='linear',
                         choices=['linear', 'sqrt', 'no_scale', ])
 
     parser.add_argument('-j', '--num-workers', default=32, type=int, metavar='N',
                         help='number of data loading workers (default: 32)')
 
-    parser.add_argument('--train_batch_size', default=250, type=int,
+    parser.add_argument('--train_batch_size', default=50, type=int,
                         metavar='N',
                         help='mini-batch size (default: 256), this is the total '
                         'batch size of all GPUs on the current node when '
@@ -39,7 +39,7 @@ def parse_args():
 
     # Optimizer Configs:
     # In optimizer we will have three Option ('Original Configure', 'Weight Decay', 'Gradient Centralization')
-    parser.add_argument('--optimizer', type=str, default="AdamW", help="Optimization for update the Gradient",
+    parser.add_argument('--optimizer', type=str, default="LARSW_GC", help="Optimization for update the Gradient",
                         choices=['Adam', 'SGD', 'LARS', 'AdamW', 'SGDW', 'LARSW',
                                  'AdamGC', 'SGDGC', 'LARSGC', 'AdamW_GC', 'SGDW_GC', 'LARSW_GC'])
     parser.add_argument('--momentum', type=float, default=0.9,

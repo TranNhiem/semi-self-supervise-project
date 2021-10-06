@@ -2,6 +2,7 @@ import tensorflow as tf
 from tensorflow.python.ops.gen_batch_ops import batch
 import tensorflow_addons as tfa
 import numpy as np
+from tensorflow.keras import layers
 
 ######################################################################################
 '''Supervised  Contrastive LOSS'''
@@ -152,6 +153,7 @@ def nt_xent_asymetrize_loss_v2(p, z, temperature, batch_size):  # negative_mask
         loss_ = tf.keras.losses.SparseCategoricalCrossentropy(
             from_logits=True, reduction=tf.keras.losses.Reduction.SUM)
         loss += loss_(y_pred=logits, y_true=l_labels)
+
     loss = loss/(2*batch_size)
 
     return loss
@@ -186,9 +188,11 @@ def nt_xent_symmetrize_keras(p, z, temperature):
 
 '''BYOL SYMETRIZE LOSS'''
 # Symetric LOSS
+# Offical Implementation
 
 
 def byol_symetrize_loss(p, z):
+    z = tf.stop_gradient(z)
     p = tf.math.l2_normalize(p, axis=1)  # (2*bs, 128)
     z = tf.math.l2_normalize(z, axis=1)  # (2*bs, 128)
 
@@ -198,6 +202,7 @@ def byol_symetrize_loss(p, z):
 
 '''Loss 2 SimSiam Model'''
 # Asymetric LOSS
+# offical Implementation
 
 
 def simsam_loss(p, z):
@@ -211,6 +216,8 @@ def simsam_loss(p, z):
     # equivalent to maximizing the similarity).
     return -tf.reduce_mean(tf.reduce_sum((p * z), axis=1))
 
+# Experimental testing Collapse Situation
+
 
 def simsam_loss_non_stop_Gr(p, z):
     # The authors of SimSiam emphasize the impact of
@@ -222,3 +229,64 @@ def simsam_loss_non_stop_Gr(p, z):
     # Negative cosine similarity (minimizing this is
     # equivalent to maximizing the similarity).
     return -tf.reduce_mean(tf.reduce_sum((p * z), axis=1))
+
+
+######################################################################################
+'''NONE CONTRASTIVE + Online Clustering Base Approach'''
+####################################################################################
+'''
+Why not using OFFLINE cluster method to assign the Psudo -- Group of lable feature on entire dataset
+--> using this training in Supervised manner 
+----->  THIS method has to go through entire data to generate all these subset label (expensive to implement)
+==> Need the Online Clustering for reduce the computation expensive of the method
+
+## Using Non-Contrastive + Clustering Assignment 
+1. Building Prototype Net to Convert 256 Feature vector --> Smaller protype Vectors
+2. Bulding Sinkhorn For clustering Assignment (SwAV-- Online assigment with Learnable parameter)
+3. Cross entropy loss to optimize the encoder (2 version should be similar)
+
+'''
+# 1 Prototype Network
+
+
+def get_projection_protype(encod_output_shape, dense_1=1024, dense_2=96, prototype_dimension=10):
+    inputs = tf.keras.Input((encod_output_shape, ))
+
+    projection_1 = layers.Dense(units=dense_1)(inputs)
+    projection_1 = layers.BatchNormalization()(projection_1)
+    projection_1 = layers.Activation("relu")(projection_1)
+
+    projection_2 = layers.Dense(units=dense_2)(projection_1)
+    l2_norm = tf.math.l2_normalize(
+        projection_2, axis=1, name="projection_normalize")
+    prototype = layers.Dense(units=prototype_dimension,
+                             use_bias=False, name='protype')(l2_norm)
+
+    return tf.keras.Model(inputs=inputs, outputs=[l2_norm, prototype])
+
+
+# 2 Building the SInkhorn cluster assignment with 3 Itertion
+# Good number of iter for effcient runing in GPUs times
+
+def sinkhorn(sample_prototype_batch):
+
+    Q = tf.transpose(tf.exp(sample_prototype_batch/0.05))
+    Q /= tf.keras.backend.sum(Q)
+    K, B = Q.shape
+
+    u = tf.zeros_like(K, dtype=tf.float32)
+    r = tf.ones_like(K, dtype=tf.float32) / K
+    c = tf.ones_like(B, dtype=tf.float32) / B
+
+    for _ in range(3):
+        u = tf.keras.backend.sum(Q, axis=1)
+        Q *= tf.expand_dims((r / u), axis=1)
+        Q *= tf.expand_dims(c / tf.keras.backend.sum(Q, axis=0), 0)
+
+    final_quantity = Q / tf.keras.backend.sum(Q, axis=0, keepdims=True)
+    final_quantity = tf.transpose(final_quantity)
+
+    return final_quantity
+
+
+def SwAV_loss()

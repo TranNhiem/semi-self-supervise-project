@@ -13,7 +13,7 @@ def parse_args():
     parser.add_argument('-- exp_name', default='test', type=str,
                         help='experiment_name')
 
-    parser.add_argument('--train_epochs', type=int, default=1000,
+    parser.add_argument('--train_epochs', type=int, default=600,
                         help='Number of iteration')
 
     parser.add_argument('--classify_epochs', type=int, default=50,
@@ -22,7 +22,7 @@ def parse_args():
     parser.add_argument('--train_steps', type=int, default=None,
                         help='Number base total steps iterate each epochs')
 
-    parser.add_argument('--warmup_epochs', type=int, default=20,
+    parser.add_argument('--warmup_epochs', type=int, default=10,
                         help='Warmup the learning base period -- this Larger --> Warmup more slower')
 
     parser.add_argument('--dataset', metavar='DATA', default='tiny-imagenet',
@@ -55,7 +55,7 @@ def parse_args():
 
     # Configure for Self-Supervised Training
 
-    parser.add_argument('--SSL_training', type=str, default="classify_train", help="Optimization for update the Gradient",
-                        choices=['ssl_traing', 'classify_train'])
+    parser.add_argument('--SSL_training', type=str, default="ssl_train", help="Optimization for update the Gradient",
+                        choices=['ssl_train', 'classify_train'])
 
     return parser.parse_args()

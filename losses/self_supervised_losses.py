@@ -190,7 +190,10 @@ def nt_xent_symmetrize_keras(p, z, temperature):
 # Symetric LOSS
 # Offical Implementation
 
-
+## Noted consider using the stop gradient here 
+"""already configure in Custom training loop so 
+==-> you might not need the stop GRAD 
+"""
 def byol_symetrize_loss(p, z):
     z = tf.stop_gradient(z)
     p = tf.math.l2_normalize(p, axis=1)  # (2*bs, 128)
@@ -284,10 +287,12 @@ def SwAV_loss(tape, crops_for_assign, batch_size, NUM_CROPS, prototype, temperat
         # Cluster assigment predictiob
         subloss = 0
         for v in np.delete(np.arange(np.sum(NUM_CROPS)), crop_id):
-                        p = tf.nn.softmax(
-                            prototype[batch_size * v: batch_size * (v + 1)] / temperature)
-                        subloss -= tf.math.reduce_mean(
-                            tf.math.reduce_sum(q * tf.math.log(p), axis=1))
+            p = tf.nn.softmax(
+                prototype[batch_size * v: batch_size * (v + 1)] / temperature)
+            subloss -= tf.math.reduce_mean(
+                tf.math.reduce_sum(q * tf.math.log(p), axis=1))
         loss += subloss / tf.cast((tf.reduce_sum(NUM_CROPS) - 1), tf.float32)
-                
+
     loss /= len(crops_for_assign)
+
+    return loss

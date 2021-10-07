@@ -28,7 +28,7 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
 
     try:
-        tf.config.experimental.set_visible_devices(gpus[0:2], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0:8], 'GPU')
         logical_gpus = tf.config.experimental.list_logical_devices('GPU')
         print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPU")
     except RuntimeError as e:
@@ -39,7 +39,7 @@ strategy = tf.distribute.MirroredStrategy()
 args = parse_args()
 # Image_Size for Training and Finetune --> Check IMG_SIZE correct
 # Tiny ImageNet-SIZE
-if args.SSL_training == "ssl_training":
+if args.SSL_training == "ssl_train":
     input_shape = (64, 64, 3)
     IMG_SIZE = 64
 
@@ -104,6 +104,7 @@ with strategy.scope():
     def main(args):
 
         if args.SSL_training == "ssl_train":
+            print("Self--Supervised Pretrain")
             EPOCHS = args.train_epochs
             include_top = False
             conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
@@ -172,7 +173,7 @@ with strategy.scope():
             # Custom Define Hyperparameter
             ################################
             # 3. Schedule CosineDecay warmup
-            base_lr = 0.03
+            base_lr = 0.3
             lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
             optimizers = get_optimizer(lr_rate)
             LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
@@ -241,8 +242,11 @@ with strategy.scope():
                 # for _, (test_ds_one, test_ds_two) in enumerate(test_ds):
                 #     distributed_test_step(test_ds_one, test_ds_two)
 
-                if epoch_id % 500 == 0:
-                    checkpoint.save(checkpoint_prefix)
+                if epoch_id % 200 == 0:
+                    # checkpoint.save(checkpoint_prefix)
+                    weight_path = './test_model_checkpoint/conv_vit_simcl_Tiny_imagenet_{}.h5'.format(
+                        epoch_id+1)
+                    conv_VIT_model.save_weights(weight_path)
 
                 template = ("Epoch {}, Train Loss: {},  ")
                 print(template.format(epoch_id+1, train_losses,))
@@ -260,13 +264,13 @@ with strategy.scope():
 
             EPOCHS = args.classify_epochs
             # Future Design Remove the Top Keep Only Encoder
-            include_top = False
+            include_top = True
 
             conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
                                               NUM_TRANSFORMER_BLOCK, num_multi_heads,
                                               FFN_layers_units, classification_unit, dropout_rate,
                                               stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
-                                              include_top=include_top, pooling_mode="1D",
+                                              include_top=include_top, pooling_mode="sequence_pooling",
                                               )
 
             conv_VIT_model(tf.keras.Input((input_shape)))
@@ -283,10 +287,13 @@ with strategy.scope():
                 [tf.reduce_prod(var.shape) for var in conv_VIT_model.trainable_variables])
             print('The encoders have {} trainable parameters each.'.format(num_params_f))
 
-            # Loading self-Supervised Pretrain_weight
-            checkpoint_dir = './test_model_checkpoint/'
-            latest = tf.train.latest_checkpoint(checkpoint_dir)
-            conv_VIT_model.load_weights(latest)
+            # # Loading self-Supervised Pretrain_weight
+            # checkpoint_dir = './test_model_checkpoint/'
+            # latest = tf.train.latest_checkpoint(checkpoint_dir)
+            # checkpoint = tf.train.Checkpoint(conv_VIT_model)
+            # checkpoint.restore(latest)
+            weight_path = './test_model_checkpoint/conv_vit_simcl_Tiny_imagenet_400.h5'
+            conv_VIT_model.load_weights(weight_path)
             conv_VIT_model.trainable = False  # Freeze entire encoder model
             print("Successful Loading Model Pretrain Weight --- Freezing Encoder")
 

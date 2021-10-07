@@ -6,7 +6,7 @@ from Data_utils.imagenet_data import imagenet_dataset
 import tensorflow_addons as tfa
 # Noted in conv_transform_VIT_V1_model sequence 1D working well expecept Sequence Pooling has issue
 from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import conv_VIT_V1_func
-from losses.self_supervised_losses import nt_xent_asymetrize_loss_v2
+from losses.self_supervised_losses import byol_symetrize_loss
 import argparse
 from tensorflow.keras.optimizers import schedules
 from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
@@ -34,10 +34,18 @@ if gpus:
         print(e)
 
 strategy = tf.distribute.MirroredStrategy()
+args = parse_args()
+# Image_Size for Training and Finetune --> Check IMG_SIZE correct
+# Tiny ImageNet-SIZE
+if args.SSL_training == "ssl_train":
+    input_shape = (64, 64, 3)
+    IMG_SIZE = 64
 
-# Try to keep latten array small
-input_shape = (64, 64, 3)
-IMG_SIZE = 64
+# Cifar 100 Cifar 10 -IMG-SIZE
+elif args.SSL_training == "classify_train":
+    input_shape = (32, 32, 3)
+    IMG_SIZE = 32
+
 # Supervised Training
 num_class = 256
 
@@ -49,7 +57,8 @@ position_embedding_option = True
 # Classification
 include_top = False
 stochastic_depth = False
-projection_dim = 256
+projection_dim = 512
+mlp_project_dim = 256
 dropout_rate = 0.2
 stochastic_depth_rate = 0.1
 
@@ -65,200 +74,481 @@ classification_unit = [projection_dim, num_class]
 
 print(f"Image size: {IMG_SIZE} X {IMG_SIZE} = {IMG_SIZE ** 2}")
 temperature = 0.1
-args = parse_args()
 BATCH_SIZE_per_replica = args.train_batch_size
 global_BATCH_SIZE = BATCH_SIZE_per_replica * strategy.num_replicas_in_sync
 print("Global _batch_size", global_BATCH_SIZE)
 
 
-EPOCHS = args.train_epochs
-image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
-# # Prepare data training
-data = imagenet_dataset(IMG_SIZE, global_BATCH_SIZE, img_path=image_path)
-num_images = data.num_images
-train_ds = data.ssl_Simclr_Augment_policy()
-train_ds = strategy.experimental_distribute_dataset(train_ds)
-#ds_two = strategy.experimental_distribute_dataset(test_ds)
+if args.SSL_training == "ssl_train":
+
+    # # Prepare data training
+    image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
+    data = imagenet_dataset(IMG_SIZE, global_BATCH_SIZE, img_path=image_path)
+    num_images = data.num_images
+    train_ds = data.ssl_Simclr_Augment_policy()
+    train_ds = strategy.experimental_distribute_dataset(train_ds)
+    # ds_two = strategy.experimental_distribute_dataset(test_ds)
+
+if args.SSL_training == "classify_train":
+    print("You trainging the classification head")
+    # # Prepare data training
+    data = CIFAR100_dataset(global_BATCH_SIZE, IMG_SIZE)
+    num_images = data.num_train_images
+    train_ds, test_ds = data.supervised_train_ds_test_ds()
+    train_ds = strategy.experimental_distribute_dataset(train_ds)
+    test_ds = strategy.experimental_distribute_dataset(test_ds)
+
+# ds_two = strategy.experimental_distribute_dataset(test_ds)
+
+# Follow the design of BYOL the 2*output of Encoder --> reduce to smaller Repr
+# 512 (h) -> 1024 -> 256 (z)
+
+
+class Projection_prediction_network(tf.keras.Model):
+    def __init__(self, Projection_dim):
+        self.pro_dim = Projection_dim
+        super(Projection_prediction_network, self).__init__()
+        self.fc1 = tf.keras.layers.Dense(units=1024)
+        self.bn = tf.keras.layers.BatchNormalization()
+        self.fc2 = tf.keras.layers.Dense(units=self.pro_dim)
+
+    def call(self, inp, training=False):
+        x = self.fc1(inp)
+        x = self.bn(x, training=training)
+        x = tf.nn.relu(x)
+        x = self.fc2(x)
+        return x
+
 
 with strategy.scope():
 
     def main(args):
 
-        # Create model Architecutre
-        # Noted of Input pooling mode 2D not support in current desing ["1D","sequence_pooling" ]
+        if args.SSL_training == "ssl_train":
 
-        # conv_VIT_model = conv_transform_VIT(num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
-        #                                     NUM_TRANSFORMER_BLOCK, num_multi_heads,
-        #                                     FFN_layers_units, classification_unit, dropout_rate,
-        #                                     stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
-        #                                     include_top=include_top, pooling_mode="1D",
-        #                                     )
+            EPOCHS = args.train_epochs
+            include_top = False
 
-        conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
-                                          NUM_TRANSFORMER_BLOCK, num_multi_heads,
-                                          FFN_layers_units, classification_unit, dropout_rate,
-                                          stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate,
-                                          include_top=include_top, pooling_mode="sequence_pooling",
-                                          )
+            conv_VIT_model_online = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+                                                     NUM_TRANSFORMER_BLOCK, num_multi_heads,
+                                                     FFN_layers_units, classification_unit, dropout_rate,
+                                                     stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate,
+                                                     include_top=include_top, pooling_mode="sequence_pooling",
+                                                     )
 
-        conv_VIT_model(tf.keras.Input((input_shape)))
-        conv_VIT_model.summary()
+            conv_VIT_model_target = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+                                                     NUM_TRANSFORMER_BLOCK, num_multi_heads,
+                                                     FFN_layers_units, classification_unit, dropout_rate,
+                                                     stochastic_depth=stochastic_depth, stochastic_depth_rate=stochastic_depth_rate,
+                                                     include_top=include_top, pooling_mode="sequence_pooling",
+                                                     )
 
-        # Initialize the Random weight
-        x = tf.random.normal((BATCH_SIZE_per_replica, IMG_SIZE, IMG_SIZE, 3))
-        h = conv_VIT_model(x, training=False)
-        print("Succeed Initialize online encoder")
-        print(f"Conv_ViT encoder OUTPUT: {h.shape}")
+            conv_VIT_model_online(tf.keras.Input((input_shape)))
+            conv_VIT_model_target(tf.keras.Input((input_shape)))
+            conv_VIT_model_online.summary()
 
-        num_params_f = tf.reduce_sum(
-            [tf.reduce_prod(var.shape) for var in conv_VIT_model.trainable_variables])
-        print('The encoders have {} trainable parameters each.'.format(num_params_f))
+            # Initialize the Random weight
+            x = tf.random.normal(
+                (BATCH_SIZE_per_replica, IMG_SIZE, IMG_SIZE, 3))
+            h = conv_VIT_model_online(x, training=False)
+            print("Succeed Initialize online encoder")
+            print(f"Conv_ViT encoder OUTPUT: {h.shape}")
 
-        # Configure Logs recording during training
+            num_params_f = tf.reduce_sum(
+                [tf.reduce_prod(var.shape) for var in conv_VIT_model_online.trainable_variables])
+            print('The encoders have {} trainable parameters each.'.format(num_params_f))
+            print("The Projection Head and Predictor Architecture")
+            print(f"Output of projection Head")
+            project = Projection_prediction_network(mlp_project_dim)
+            pro = project(h, training=False)
 
-        # Training Configure
+            target_pro = Projection_prediction_network(mlp_project_dim)
 
-        configs = {
-            "Model_Arch": "Conv_ViT_arch",
-            "DataAugmentation_types": "SimCLR",
-            "Dataset": "TinyImageNet",
-            "IMG_SIZE": IMG_SIZE,
-            "Epochs": EPOCHS,
-            "Batch_size": BATCH_SIZE_per_replica,
-            "Learning_rate": "Linear_scale_1e-3*Batch_size/512",
-            "Optimizer": "LARS_Opt",
-            "SEED": SEED,
-            "Loss type": "NCE_Loss Temperature",
-        }
+            project_params = tf.reduce_sum(
+                [tf.reduce_prod(var.shape) for var in project.trainable_variables])
+            print(
+                f"projection output shape {pro.shape}, number parameters {project_params}")
+            predictor = Projection_prediction_network(mlp_project_dim)
+            predic = predictor(pro, training=False)
+            print(
+                f"projection output shape {predic.shape}, number parameters {project_params}")
+            # Configure Logs recording during training
+            # Training Configure
 
-        wandb.init(project="heuristic_attention_representation_learning",
-                   sync_tensorboard=True, config=configs)
+            configs = {
+                "Model_Arch": "Conv_ViT_arch",
+                "DataAugmentation_types": "SimCLR",
+                "Dataset": "TinyImageNet",
+                "IMG_SIZE": IMG_SIZE,
+                "Epochs": EPOCHS,
+                "Batch_size": BATCH_SIZE_per_replica,
+                "Learning_rate": "Linear_scale_1e-3*Batch_size/512",
+                "Optimizer": "LARS_Opt",
+                "SEED": SEED,
+                "Loss type": "NCE_Loss Temperature",
+            }
 
-        # Model Hyperparameter Defined Primary
-        # 1. Define init
-        # base_lr = 1e-3
-        # weight_decay = 1e-6
-        # # 2. Schedule init
-        # step = tf.Variable(0, trainable=False)
-        # schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
-        #     [10000, 15000], [1e-0, 1e-1, 1e-2])
-        # lr_schedule = 1e-3*schedule(step)
-        # def weight_decay_sche(): return 1e-4 * schedule(step)
+            wandb.init(project="heuristic_attention_representation_learning",
+                       sync_tensorboard=True, config=configs)
 
-        # optimizer = tfa.optimizers.LAMB(
-        #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
+            # Model Hyperparameter Defined Primary
+            # 1. Define init
+            # base_lr = 1e-3
+            # weight_decay = 1e-6
+            # # 2. Schedule init
+            # step = tf.Variable(0, trainable=False)
+            # schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+            #     [10000, 15000], [1e-0, 1e-1, 1e-2])
+            # lr_schedule = 1e-3*schedule(step)
+            # def weight_decay_sche(): return 1e-4 * schedule(step)
 
-        # optimizer = tfa.optimizers.SGDW(
-        #     learning_rate=lr_rate, momentum=0.9, weight_decay=weight_decay)
+            # optimizer = tfa.optimizers.LAMB(
+            #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
 
-        # optimizer = tfa.optimizers.AdamW(
-        #     learning_rate=init_lr, weight_decay=weight_decay)
+            # optimizer = tfa.optimizers.SGDW(
+            #     learning_rate=lr_rate, momentum=0.9, weight_decay=weight_decay)
 
-        ################################
-        # Custom Define Hyperparameter
-        ################################
-        # 3. Schedule CosineDecay warmup
-        base_lr = 0.03
-        lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
-        optimizers = get_optimizer(lr_rate)
-        LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
-            args)
-        # Borrow testing
-        # optimizer = tfa.optimizers.AdamW(
-        #     learning_rate=lr_rate, weight_decay=args.weight_decay)
+            # optimizer = tfa.optimizers.AdamW(
+            #     learning_rate=init_lr, weight_decay=weight_decay)
 
-        checkpoint = tf.train.Checkpoint(
-            optimizer=LARSW_GC, model=conv_VIT_model)
+            ################################
+            # Custom Define Hyperparameter
+            ################################
+            # 3. Schedule CosineDecay warmup
+            base_lr = 0.03
+            lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
+            optimizers = get_optimizer(lr_rate)
+            LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
+                args)
+            # Borrow testing
+            # optimizer = tfa.optimizers.AdamW(
+            #     learning_rate=lr_rate, weight_decay=args.weight_decay)
 
-        ##########################################
-        # Custom Keras Loss
-        ##########################################
+            checkpoint = tf.train.Checkpoint(
+                optimizer=LARSW_GC, model=conv_VIT_model_online)
 
-        def distributed_loss(x1, x2):
-            # each GPU loss per_replica batch loss
-            per_example_loss = nt_xent_asymetrize_loss_v2(
-                x1, x2, temperature, BATCH_SIZE_per_replica)
-            # total sum loss //Global batch_size
-            # return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_BATCH_SIZE)
-            return tf.reduce_sum(per_example_loss) * (1./global_BATCH_SIZE)
-        test_loss = tf.keras.metrics.Mean(name='test_loss')
-        train_loss = tf.keras.metrics.Mean(name="train_loss")
+            ##########################################
+            # Custom Keras Loss
+            ##########################################
 
-        # train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        #     name='train_accuracy')
-        # test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
-        #     name='test_accuracy')
+            def distributed_loss(x1, x2):
+                # each GPU loss per_replica batch loss
 
-        @tf.function
-        def train_step(ds_one, ds_two):  # (bs, 32, 32, 3), (bs)
+                per_example_loss = byol_symetrize_loss(
+                    x1, x2)
+                # total sum loss //Global batch_size
+                # return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_BATCH_SIZE)
+                return tf.reduce_sum(per_example_loss) * (1./global_BATCH_SIZE)
+            test_loss = tf.keras.metrics.Mean(name='test_loss')
+            train_loss = tf.keras.metrics.Mean(name="train_loss")
 
-            # Forward pass
-            with tf.GradientTape() as tape:
-                # (bs, 512)
-                rep_ds1 = conv_VIT_model(ds_one, training=True)  # (bs, 10)
-                rep_ds2 = conv_VIT_model(ds_two, training=True)  # (bs, 10)
+            @tf.function
+            def train_step(ds_one, ds_two):  # (bs, 32, 32, 3), (bs)
 
-                loss = distributed_loss(rep_ds1, rep_ds2)
+                # Forward pass
+                h_target_dsone = conv_VIT_model_target(ds_one)
+                p_target_dsone = target_pro(h_target_dsone)
 
-            # Backward pass
-            grads = tape.gradient(loss, conv_VIT_model.trainable_variables)
-            LARSW_GC.apply_gradients(
-                zip(grads, conv_VIT_model.trainable_variables))
+                h_target_dstwo = conv_VIT_model_target(ds_two)
+                p_target_dstwo = target_pro(h_target_dstwo)
+                with tf.GradientTape() as tape:
+                    # (bs, 512)
+                    rep_ds1 = conv_VIT_model_online(
+                        ds_one, training=True)  # (bs, 10)
+                    pro_online_1 = project(rep_ds1)
+                    pre_online_1 = predictor(pro_online_1)
 
-            #train_accuracy.update_state(y, y_pred_logits)
-            return loss
+                    rep_ds2 = conv_VIT_model_online(
+                        ds_two, training=True)  # (bs, 10)
+                    pro_online_2 = project(rep_ds2)
+                    pre_online_2 = predictor(pro_online_2)
 
-        # def test_step(ds_one, ds_two):
+                    p_online = tf.concat([pre_online_1, pre_online_2], axis=0)
+                    z_target = tf.concat(
+                        [p_target_dstwo, p_target_dsone], axis=0)
 
-        #     rep_ds_one = conv_VIT_model(ds_one, training=False)
-        #     rep_ds_two = conv_VIT_model(ds_two, training=False)
-        #     t_loss = distributed_loss(rep_ds_one, rep_ds_two)
+                    loss = distributed_loss(p_online, z_target)
 
-        #     test_loss.update_state(t_loss)
-        #     #test_accuracy.update_state(labels, predictions)
+                # Backward pass
+                grads = tape.gradient(
+                    loss, conv_VIT_model_online.trainable_variables)
+                LARSW_GC.apply_gradients(
+                    zip(grads, conv_VIT_model_online.trainable_variables))
 
-        @ tf.function
-        def distributed_train_step(ds_one, ds_two):
-            per_replica_losses = strategy.run(
-                train_step, args=(ds_one, ds_two))
-            return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
-                                   axis=None)
+                grads = tape.gradient(
+                    loss, project.trainable_variables)
+                LARSW_GC.apply_gradients(
+                    zip(grads, project.trainable_variables))
 
-        # @ tf.function
-        # def distributed_test_step(ds_one, ds_two):
-        #     return strategy.run(test_step, args=(ds_one, ds_two))
+                grads = tape.gradient(
+                    loss, predictor.trainable_variables)
+                LARSW_GC.apply_gradients(
+                    zip(grads, predictor.trainable_variables))
 
-        for epoch_id in range(EPOCHS):
+                del tape
+                # train_accuracy.update_state(y, y_pred_logits)
+                return loss
 
-            total_loss = 0.0
-            num_batches = 0
-            for _, (train_ds_one, train_ds_two) in enumerate(train_ds):
+            @ tf.function
+            def distributed_train_step(ds_one, ds_two):
+                per_replica_losses = strategy.run(
+                    train_step, args=(ds_one, ds_two))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                                       axis=None)
 
-                total_loss += distributed_train_step(
-                    train_ds_one, train_ds_two)
+            for epoch_id in range(EPOCHS):
 
-                num_batches += 1
+                total_loss = 0.0
+                num_batches = 0
+                for _, (train_ds_one, train_ds_two) in enumerate(train_ds):
 
-            train_losses = total_loss/num_batches
+                    total_loss += distributed_train_step(
+                        train_ds_one, train_ds_two)
 
-            # # train_loss.update_state(train_losses)
-            # for _, (test_ds_one, test_ds_two) in enumerate(test_ds):
-            #     distributed_test_step(test_ds_one, test_ds_two)
+                    num_batches += 1
+                    beta = 0.99
+                    target_encoder_weights = conv_VIT_model_target.get_weights()
+                    online_encoder_weights = conv_VIT_model_online.get_weights()
 
-            if epoch_id % 500 == 0:
-                checkpoint.save(checkpoint_prefix)
+                    for i in range(len(online_encoder_weights)):
+                        target_encoder_weights[i] = beta * target_encoder_weights[i] + (
+                            1-beta) * online_encoder_weights[i]
+                    conv_VIT_model_target.set_weights(target_encoder_weights)
 
-            template = ("Epoch {}, Train Loss: {},  ")
-            print(template.format(epoch_id+1, train_losses,))
+                    g_target_weights = target_pro.get_weights()
+                    g_online_weights = project.get_weights()
 
-            wandb.log({
-                "epochs": epoch_id,
-                "train_loss": train_losses,
-                "learning_rate": lr_rate
+                    for i in range(len(g_online_weights)):
+                        g_target_weights[i] = beta*g_target_weights[i] + \
+                            (1-beta) * g_online_weights[i]
+                    target_pro.set_weights(g_target_weights)
 
-            })
-            # train_loss.reset_states()
-            # test_loss.reset_states()
+                train_losses = total_loss/num_batches
+
+                if epoch_id % 200 == 0:
+                     weight_path = './test_model_checkpoint/conv_vit_BYOL_Tiny_imagenet_{}.h5'.format(
+                        epoch_id+1)
+                    conv_VIT_model_online.save_weights(weight_path)
+
+                template = ("Epoch {}, Train Loss: {},  ")
+                print(template.format(epoch_id+1, train_losses,))
+
+                wandb.log({
+                    "epochs": epoch_id,
+                    "train_loss": train_losses,
+                    "learning_rate": lr_rate
+
+                })
+
+        elif args.SSL_training == "classify_train":
+            include_top = False
+            EPOCHS = args.classify_epochs
+            # Future Design Remove the Top Keep Only Encoder
+            include_top = True
+
+            conv_VIT_model = conv_VIT_V1_func(input_shape, num_class, IMG_SIZE, num_conv_layers, spatial2projection_dim, position_embedding_option, projection_dim,
+                                              NUM_TRANSFORMER_BLOCK, num_multi_heads,
+                                              FFN_layers_units, classification_unit, dropout_rate,
+                                              stochastic_depth=False, stochastic_depth_rate=stochastic_depth_rate,
+                                              include_top=include_top, pooling_mode="sequence_pooling",
+                                              )
+
+            conv_VIT_model(tf.keras.Input((input_shape)))
+            conv_VIT_model.summary()
+
+            # Initialize the Random weight
+            x = tf.random.normal(
+                (BATCH_SIZE_per_replica, IMG_SIZE, IMG_SIZE, 3))
+            h = conv_VIT_model(x, training=False)
+            print("Succeed Initialize online encoder")
+            print(f"Conv_ViT encoder OUTPUT: {h.shape}")
+
+            num_params_f = tf.reduce_sum(
+                [tf.reduce_prod(var.shape) for var in conv_VIT_model.trainable_variables])
+            print('The encoders have {} trainable parameters each.'.format(num_params_f))
+
+            # # Loading self-Supervised Pretrain_weight
+            # checkpoint_dir = './test_model_checkpoint/'
+            # latest = tf.train.latest_checkpoint(checkpoint_dir)
+            # checkpoint = tf.train.Checkpoint(conv_VIT_model)
+            # checkpoint.restore(latest)
+            weight_path = './test_model_checkpoint/conv_BYOL_Tiny_imagenet_400.h5'
+            conv_VIT_model.load_weights(weight_path)
+            conv_VIT_model.trainable = False  # Freeze entire encoder model
+            print("Successful Loading Model Pretrain Weight --- Freezing Encoder")
+
+            def classification_ffn(classification_unit, dropout_rate):
+                '''
+                args: Layers_number_neuron  == units_neuron
+                    example units_neuron=[512, 256, 256] --> layers=len(units_neuron), units= values of element inside list
+                dropout rate--> adding 1 dropout percentages layer Last ffn model
+
+                return  FFN model in keras Sequential model
+                '''
+                ffn_layers = []
+                for units in classification_unit[:-1]:
+                    ffn_layers.append(tf.keras.layers.Dense(
+                        units=units, activation=tf.nn.gelu))
+                    ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
+                ffn_layers.append(tf.keras.layers.Dense(
+                    units=classification_unit[-1], activation='softmax'))  # activation='softmax'
+                # ffn_layers.append(tf.keras.layers.Dropout(dropout_rate))
+                ffn = tf.keras.Sequential(ffn_layers)
+
+                return ffn
+
+            classify_model = classification_ffn(
+                classification_unit, dropout_rate)
+            # Configure Logs recording during training
+
+            # Training Configure
+
+            configs = {
+                "Model_Arch": "Conv_ViT_arch",
+                "DataAugmentation_types": "SimCLR",
+                "Experiment_Type": "fine-Tune classification",
+                "Dataset": "Cifar100",
+                "IMG_SIZE": IMG_SIZE,
+                "Epochs": EPOCHS,
+                "Batch_size": BATCH_SIZE_per_replica,
+                "Learning_rate": "1e-3*Batch_size/512",
+                "Optimizer": "AdamW",
+                "SEED": SEED,
+                "Loss type": "Cross_entropy_loss",
+            }
+
+            wandb.init(project="heuristic_attention_representation_learning",
+                       sync_tensorboard=True, config=configs)
+
+            # Model Hyperparameter Defined Primary
+            # 1. Define init
+            # base_lr = 1e-3
+            # weight_decay = 1e-6
+            # # 2. Schedule init
+            # step = tf.Variable(0, trainable=False)
+            # schedule = tf.optimizers.schedules.PiecewiseConstantDecay(
+            #     [10000, 15000], [1e-0, 1e-1, 1e-2])
+            # lr_schedule = 1e-3*schedule(step)
+            # def weight_decay_sche(): return 1e-4 * schedule(step)
+
+            # optimizer = tfa.optimizers.LAMB(
+            #     learning_rate=init_lr, weight_decay_rate=weight_decay_sche)
+
+            # optimizer = tfa.optimizers.SGDW(
+            #     learning_rate=lr_rate, momentum=0.9, weight_decay=weight_decay)
+
+            # optimizer = tfa.optimizers.AdamW(
+            #     learning_rate=init_lr, weight_decay=weight_decay)
+
+            ################################
+            # Custom Define Hyperparameter
+            ################################
+            # 3. Schedule CosineDecay warmup
+            base_lr = 0.003
+            lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
+            optimizers = get_optimizer(lr_rate)
+            LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
+                args)
+            # Borrow testing
+            # optimizer = tfa.optimizers.AdamW(
+            #     learning_rate=lr_rate, weight_decay=args.weight_decay)
+
+            ##########################################
+            # Custom Keras Loss
+            ##########################################
+
+            loss_object = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True,
+                                                                        reduction=tf.keras.losses.Reduction.NONE)
+
+            def distributed_loss(lables, predictions):
+                # each GPU loss per_replica batch loss
+                per_example_loss = loss_object(lables, predictions)
+                # total sum loss //Global batch_size
+                return tf.nn.compute_average_loss(per_example_loss, global_batch_size=global_BATCH_SIZE)
+
+            test_loss = tf.keras.metrics.Mean(name='test_loss')
+            train_loss = tf.keras.metrics.Mean(name="train_loss")
+            train_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+                name='train_accuracy')
+            test_accuracy = tf.keras.metrics.SparseCategoricalAccuracy(
+                name='test_accuracy')
+
+            @tf.function
+            def train_step(x, y):  # (bs, 32, 32, 3), (bs)
+
+                # Forward pass
+                with tf.GradientTape() as tape:
+                    # (bs, 512)
+                    repr_ = conv_VIT_model(
+                        x, training=False)  # (bs, 10)
+                    y_pred_logits = classify_model(repr_, training=True)
+                    loss = distributed_loss(y, y_pred_logits)
+                # Backward pass
+                grads = tape.gradient(loss, classify_model.trainable_variables)
+                LARSW_GC.apply_gradients(
+                    zip(grads, classify_model.trainable_variables))
+
+                train_accuracy.update_state(y, y_pred_logits)
+
+                return loss
+
+            def test_step(x, y):
+                images = x
+                labels = y
+
+                repr_ = conv_VIT_model(images, training=False)
+                predictions = classify_model(repr_, training=False)
+
+                t_loss = loss_object(labels, predictions)
+
+                test_loss.update_state(t_loss)
+                test_accuracy.update_state(labels, predictions)
+
+            @ tf.function
+            def distributed_train_step(ds_one, ds_two):
+                per_replica_losses = strategy.run(
+                    train_step, args=(ds_one, ds_two))
+                return strategy.reduce(tf.distribute.ReduceOp.SUM, per_replica_losses,
+                                       axis=None)
+
+            @ tf.function
+            def distributed_test_step(ds_one, ds_two):
+                return strategy.run(test_step, args=(ds_one, ds_two))
+
+            for epoch_id in range(EPOCHS):
+                total_loss = 0.0
+                num_batches = 0
+                for _, (train_x, train_y) in enumerate(train_ds):
+
+                    total_loss += distributed_train_step(train_x, train_y)
+                    num_batches += 1
+                train_losses = total_loss/num_batches
+                # train_loss.update_state(train_losses)
+                for _, (test_x, test_y) in enumerate(test_ds):
+                    distributed_test_step(test_x, test_y)
+
+                template = ("Epoch {}, Loss: {}, Accuracy: {}, Test Loss: {}, "
+                            "Test Accuracy: {}")
+                print(template.format(epoch_id+1, train_losses,
+                                      train_accuracy.result(), test_loss.result(),
+                                      test_accuracy.result()))
+
+                wandb.log({
+                    "epochs": epoch_id,
+                    "train_loss": train_losses,
+                    "train_acc": train_accuracy.result(),
+                    "test_loss": test_loss.result(),
+                    "test_acc": test_accuracy.result(),
+                    "learning_rate": lr_rate
+
+                })
+                # train_loss.reset_states()
+                test_loss.reset_states()
+                train_accuracy.reset_states()
+                test_accuracy.reset_states()
+
+        else:
+            raise ValueError("Training mode not Implement Yet")
 
     if __name__ == '__main__':
 

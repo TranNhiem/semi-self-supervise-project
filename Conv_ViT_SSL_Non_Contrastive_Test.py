@@ -3,6 +3,7 @@ import os
 from utils.args import parse_args
 from Data_utils.datasets import SEED
 from Data_utils.imagenet_data import imagenet_dataset
+from Data_utils.datasets import CIFAR100_dataset
 import tensorflow_addons as tfa
 # Noted in conv_transform_VIT_V1_model sequence 1D working well expecept Sequence Pooling has issue
 from Neural_Net_Architecture.Convnet_Transformer.perceiver_compact_Conv_transformer_VIT_architecture import conv_VIT_V1_func
@@ -326,7 +327,7 @@ with strategy.scope():
                 train_losses = total_loss/num_batches
 
                 if epoch_id % 200 == 0:
-                     weight_path = './test_model_checkpoint/conv_vit_BYOL_Tiny_imagenet_{}.h5'.format(
+                    weight_path = './test_model_checkpoint/conv_vit_BYOL_Tiny_imagenet_{}.h5'.format(
                         epoch_id+1)
                     conv_VIT_model_online.save_weights(weight_path)
 

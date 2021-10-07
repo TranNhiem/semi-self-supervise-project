@@ -180,13 +180,14 @@ with strategy.scope():
                 "Model_Arch": "Conv_ViT_arch",
                 "DataAugmentation_types": "SimCLR",
                 "Dataset": "TinyImageNet",
+                "experiment": "Non-Contrastive BYOL",
                 "IMG_SIZE": IMG_SIZE,
                 "Epochs": EPOCHS,
                 "Batch_size": BATCH_SIZE_per_replica,
                 "Learning_rate": "Linear_scale_1e-3*Batch_size/512",
                 "Optimizer": "LARS_Opt",
                 "SEED": SEED,
-                "Loss type": "NCE_Loss Temperature",
+                "Loss type": "L2_Loss",
             }
 
             wandb.init(project="heuristic_attention_representation_learning",

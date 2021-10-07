@@ -58,7 +58,7 @@ position_embedding_option = True
 # Classification
 include_top = False
 stochastic_depth = False
-projection_dim = 512
+projection_dim = 256
 mlp_project_dim = 256
 dropout_rate = 0.2
 stochastic_depth_rate = 0.1
@@ -83,7 +83,10 @@ print("Global _batch_size", global_BATCH_SIZE)
 if args.SSL_training == "ssl_train":
 
     # # Prepare data training
-    image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
+    # server 133
+    #image_path = "/data/home/Rick/Desktop/tiny_imagenet_200/train/"
+    # Server 130
+    image_path = '/data/home/Rick109/Desktop/Working_space/tiny_imagenet_200/train/'
     data = imagenet_dataset(IMG_SIZE, global_BATCH_SIZE, img_path=image_path)
     num_images = data.num_images
     train_ds = data.ssl_Simclr_Augment_policy()
@@ -109,7 +112,7 @@ class Projection_prediction_network(tf.keras.Model):
     def __init__(self, Projection_dim):
         self.pro_dim = Projection_dim
         super(Projection_prediction_network, self).__init__()
-        self.fc1 = tf.keras.layers.Dense(units=1024)
+        self.fc1 = tf.keras.layers.Dense(units=512)
         self.bn = tf.keras.layers.BatchNormalization()
         self.fc2 = tf.keras.layers.Dense(units=self.pro_dim)
 
@@ -217,7 +220,7 @@ with strategy.scope():
             # Custom Define Hyperparameter
             ################################
             # 3. Schedule CosineDecay warmup
-            base_lr = 0.03
+            base_lr = 0.3
             lr_rate = WarmUpAndCosineDecay(base_lr, num_images, args)
             optimizers = get_optimizer(lr_rate)
             LARSW_GC = optimizers.optimizer_weight_decay_gradient_centralization(
@@ -248,22 +251,23 @@ with strategy.scope():
             def train_step(ds_one, ds_two):  # (bs, 32, 32, 3), (bs)
 
                 # Forward pass
-                h_target_dsone = conv_VIT_model_target(ds_one)
-                p_target_dsone = target_pro(h_target_dsone)
+                h_target_dsone = conv_VIT_model_target(ds_one, training=True)
+                p_target_dsone = target_pro(h_target_dsone, training=True)
 
-                h_target_dstwo = conv_VIT_model_target(ds_two)
-                p_target_dstwo = target_pro(h_target_dstwo)
-                with tf.GradientTape() as tape:
+                h_target_dstwo = conv_VIT_model_target(ds_two, training=True)
+                p_target_dstwo = target_pro(h_target_dstwo, training=True)
+
+                with tf.GradientTape(persistent=True) as tape:
                     # (bs, 512)
                     rep_ds1 = conv_VIT_model_online(
                         ds_one, training=True)  # (bs, 10)
-                    pro_online_1 = project(rep_ds1)
-                    pre_online_1 = predictor(pro_online_1)
+                    pro_online_1 = project(rep_ds1, training=True)
+                    pre_online_1 = predictor(pro_online_1, training=True)
 
                     rep_ds2 = conv_VIT_model_online(
                         ds_two, training=True)  # (bs, 10)
-                    pro_online_2 = project(rep_ds2)
-                    pre_online_2 = predictor(pro_online_2)
+                    pro_online_2 = project(rep_ds2, training=True)
+                    pre_online_2 = predictor(pro_online_2, training=True)
 
                     p_online = tf.concat([pre_online_1, pre_online_2], axis=0)
                     z_target = tf.concat(

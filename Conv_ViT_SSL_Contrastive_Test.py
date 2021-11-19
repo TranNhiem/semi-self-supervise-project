@@ -1,4 +1,6 @@
 import wandb
+from wandb.keras import WandbCallback
+
 import os
 from utils.args import parse_args
 from Data_utils.datasets import SEED
@@ -11,7 +13,7 @@ from losses.self_supervised_losses import nt_xent_asymetrize_loss_v2
 import argparse
 from tensorflow.keras.optimizers import schedules
 from Training_strategy.learning_rate_optimizer_weight_decay_schedule import WarmUpAndCosineDecay, get_optimizer
-from wandb.keras import WandbCallback
+
 import tensorflow as tf
 
 
